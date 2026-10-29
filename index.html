@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <title>LUMEN - Survival Roguelite</title>
+  <title>AETHER: ECLIPSE - Survival Roguelite</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Outfit:wght@300;400;600;700;800;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
@@ -16,49 +16,16 @@
     <!-- Canvas for gameplay rendering -->
     <canvas id="game-canvas"></canvas>
 
-    <!-- Ingame HUD matching screenshots -->
+    <!-- Ingame HUD matching user screenshot -->
     <div id="hud" class="hud-overlay hidden">
-      <!-- Top Bar -->
-      <div class="hud-top">
-        <!-- Left: Light Bar & Level -->
-        <div class="hud-light-box">
-          <div class="hud-label-row">
-            <span class="hud-label">LIGHT</span>
-            <span id="hud-light-text" class="hud-value">100 / 100</span>
-          </div>
-          <div class="light-bar-track">
-            <div id="hud-light-fill" class="light-bar-fill"></div>
-          </div>
-          <div class="hud-sub-info">
-            <span id="hud-level">LV 1</span>
-            <div id="hud-active-weapons" class="weapon-icons-row"></div>
-          </div>
-        </div>
-
-        <!-- Center: Timer & Phase Name -->
-        <div class="hud-center-box">
-          <div id="hud-timer" class="hud-timer">0:00</div>
-          <div id="hud-phase-name" class="hud-phase-name">THE FIRST DARK</div>
-        </div>
-
-        <!-- Right: Score, Multiplier & Kills -->
-        <div class="hud-score-box">
-          <div id="hud-score" class="hud-score">0</div>
-          <div class="hud-score-sub">
-            <span class="hud-score-label">SCORE</span>
-            <span id="hud-multiplier" class="hud-multiplier">x1.0</span>
-          </div>
-          <div class="hud-kills-row">
-            <span id="hud-shards-ingame" class="hud-shards-val">✨ 0</span>
-            <span id="hud-kills" class="hud-kills-val">0 kills</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Boss Bar (if active) -->
-      <div id="boss-bar-container" class="boss-bar-container hidden">
+      <!-- Boss Health Bar (appears only during boss encounters at top) -->
+      <div id="boss-bar-container" class="boss-bar-top hidden">
         <div class="boss-info-row">
-          <span id="boss-name" class="boss-name">BOSS</span>
+          <div class="boss-title-wrap">
+            <span class="boss-skull">💀</span>
+            <span id="boss-name" class="boss-name">THE FIRST DARK</span>
+          </div>
+          <span id="boss-hp-numbers" class="boss-hp-numbers">3800 / 3800 HP</span>
           <span id="boss-phase" class="boss-phase">PHASE 1</span>
         </div>
         <div class="boss-bar-track">
@@ -66,19 +33,72 @@
         </div>
       </div>
 
-      <!-- Bottom Dash Indicator -->
-      <div class="hud-bottom">
-        <div id="dash-indicator" class="dash-circle-box">
-          <svg class="dash-ring-svg" viewBox="0 0 60 60">
-            <circle class="dash-ring-bg" cx="30" cy="30" r="26"></circle>
-            <circle id="dash-ring-progress" class="dash-ring-fg" cx="30" cy="30" r="26"></circle>
-          </svg>
-          <div class="dash-center-icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
-            </svg>
+      <!-- Top HUD Area -->
+      <div class="hud-top-container">
+        <!-- Top Row: Light | Timer | Score -->
+        <div class="hud-top-row">
+          <!-- Left: Light Bar & Text -->
+          <div class="hud-light-box">
+            <span class="hud-light-label">LIGHT</span>
+            <div class="light-bar-track">
+              <div id="hud-light-fill" class="light-bar-fill"></div>
+            </div>
+            <span id="hud-light-text" class="hud-light-value">100 / 100</span>
           </div>
+
+          <!-- Center: Timer & Phase -->
+          <div class="hud-center-box">
+            <div id="hud-timer" class="hud-timer">0:00</div>
+            <div id="hud-phase-name" class="hud-phase-name">THE FIRST DARK</div>
+          </div>
+
+          <!-- Right: Score -->
+          <div class="hud-score-box">
+            <div class="hud-score-content">
+              <div id="hud-score" class="hud-score">0</div>
+              <div class="hud-score-sub">
+                <span class="hud-score-label">SCORE</span>
+                <span id="hud-multiplier" class="hud-multiplier hidden">x1.0</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Full-Width Gem/XP Progress Divider Line -->
+        <div class="hud-xp-line-section">
+          <div class="hud-xp-track">
+            <div id="hud-gem-fill" class="hud-xp-fill"></div>
+          </div>
+          <div class="hud-xp-sub-row">
+            <span id="hud-level">LV 1</span>
+            <span id="hud-kills">0 kills</span>
+          </div>
+          <div class="hidden">
+            <span id="hud-shards-ingame"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Left Active Weapons Stack (matching screenshot: L1 pill on left side) -->
+      <div id="hud-active-weapons" class="hud-weapons-left"></div>
+
+      <!-- Bottom Dash & Supernova Indicators -->
+      <div class="hud-bottom">
+        <div id="dash-indicator" class="dash-circle-box" title="Dash (Leertaste / Shift / Rechtsklick)">
+          <svg class="dash-ring-svg" viewBox="0 0 60 60">
+            <circle class="dash-ring-bg" cx="30" cy="30" r="24"></circle>
+            <circle id="dash-ring-progress" class="dash-ring-fg" cx="30" cy="30" r="24"></circle>
+          </svg>
           <span class="dash-text">DASH</span>
+        </div>
+
+        <div id="supernova-indicator" class="dash-circle-box supernova-circle-box nova-ready" title="Supernova: 97% Licht-Opferung (Taste R / F) - 1x alle 10 Min.">
+          <svg class="dash-ring-svg" viewBox="0 0 60 60">
+            <circle class="dash-ring-bg nova-ring-bg" cx="30" cy="30" r="24"></circle>
+            <circle id="supernova-ring-progress" class="dash-ring-fg nova-ring-fg" cx="30" cy="30" r="24"></circle>
+          </svg>
+          <span style="font-size:15px; line-height:1;">⚡</span>
+          <span id="supernova-text" class="dash-text nova-text">NOVA [R]</span>
         </div>
       </div>
 
@@ -89,6 +109,9 @@
             <div id="touch-joystick-thumb" class="joystick-thumb"></div>
           </div>
         </div>
+        <button id="touch-nova-btn" class="touch-nova-btn">
+          <span>⚡ NOVA</span>
+        </button>
         <button id="touch-dash-btn" class="touch-dash-btn">
           <span>DASH</span>
         </button>
@@ -126,8 +149,8 @@
       <div class="menu-content">
         <div class="title-container">
           <div class="lumen-orb-anim"></div>
-          <h1 class="game-title">LUMEN</h1>
-          <p class="game-subtitle">Dein Licht ist das Einzige, was dich am Leben erhält.</p>
+          <h1 class="game-title">AETHER</h1>
+          <p class="game-subtitle">ECLIPSE • Dein Licht ist das Einzige, was dich am Leben erhält.</p>
         </div>
 
         <div class="menu-stats-bar">
@@ -143,6 +166,17 @@
           </div>
         </div>
 
+        <div class="menu-stats-bar" style="margin-top:-16px; margin-bottom:20px;">
+          <div class="stat-pill">
+            <span class="stat-label">KLASSE:</span>
+            <span id="menu-active-class" class="stat-value" style="color:#fbbf24;">◎ Aether-Wanderer</span>
+          </div>
+          <div class="stat-pill">
+            <span class="stat-label">SKIN:</span>
+            <span id="menu-active-skin" class="stat-value">Aether-Kern</span>
+          </div>
+        </div>
+
         <div class="menu-buttons">
           <button id="btn-start-game" class="btn-primary">
             <span class="btn-glow"></span>
@@ -150,8 +184,16 @@
           </button>
           <button id="btn-open-forge" class="btn-secondary">
             <span class="btn-icon">⚒️</span>
-            DIE SCHMIEDE (FORGE)
+            DIE SCHMIEDE (UPGRADES)
           </button>
+          <div style="display:flex; gap:10px; width:100%;">
+            <button id="btn-open-classes" class="btn-secondary" style="flex:1; font-size:12px; padding:10px 12px;">
+              ⚔️ KLASSEN
+            </button>
+            <button id="btn-open-skins" class="btn-secondary" style="flex:1; font-size:12px; padding:10px 12px; border-color:rgba(56,189,248,0.45); color:#38bdf8;">
+              🎨 SKINS
+            </button>
+          </div>
           <button id="btn-open-guide" class="btn-ghost">
             <span class="btn-icon">📖</span>
             STEUERUNG & ANLEITUNG
@@ -159,8 +201,8 @@
         </div>
 
         <div class="menu-footer">
-          <span>Optimiert für Desktop & Smartphone • Letztes Update: 27. Okt. 2026</span>
-          <button id="btn-toggle-sound" class="btn-sound-toggle">🔊 Audio: An</button>
+          <span>Dark-Synthwave Soundtrack • Void Obelisks & Overdrive Edition</span>
+          <button id="btn-toggle-sound" class="btn-sound-toggle">🔊 Musik & SFX: An</button>
         </div>
       </div>
     </div>
@@ -178,12 +220,19 @@
             <span id="forge-shards-display" class="currency-val">0</span>
           </div>
         </div>
+
+        <div class="forge-tabs">
+          <button class="forge-tab-btn active" data-tab="upgrades">⚒️ UPGRADES</button>
+          <button class="forge-tab-btn" data-tab="classes">⚔️ KLASSEN & MEISTERSCHAFT</button>
+          <button class="forge-tab-btn" data-tab="skins">🎨 LICHT-SKINS</button>
+        </div>
+
         <p class="forge-desc">
-          Verwende im Dunkeln gesammelte Splitter für dauerhafte Verbesserungen. Jeder neue Versuch beginnt stärker!
+          Verwende im Dunkeln gesammelte Splitter für dauerhafte Verbesserungen, neue Klassen & Meisterschaften sowie exklusive Licht-Skins!
         </p>
 
         <div id="forge-items-grid" class="forge-grid">
-          <!-- Dynamically populated with persistent upgrades -->
+          <!-- Dynamically populated with persistent upgrades / classes / skins -->
         </div>
 
         <div class="forge-footer">
@@ -245,6 +294,7 @@
             <p><strong>Bewegen:</strong> WASD, ZQSD oder Pfeiltasten. Alternativ linke Maustaste gedrückt halten zum Bewegen oder Touchscreen-Ziehen.</p>
             <p><strong>Angriff:</strong> Automatisch! Deine Waffen erfassen Feinde im Lichtkegel selbstständig.</p>
             <p><strong>Sprinten / Dash:</strong> Leertaste, Shift oder Rechtsklick für einen Geschwindigkeitsschub mit <em>kurzzeitiger Unverwundbarkeit</em>.</p>
+            <p><strong>⚡ Ultimative Supernova (Taste R / F):</strong> Opfert sofort <strong>97% deines aktuellen Lichts</strong> (1x alle 10 Minuten), vernichtet alle Projektile & Feinde im Umkreis, gewährt Unverwundbarkeit, Overdrive und erzeugt einen schützenden Ring aus Sonnenfeuern!</p>
           </div>
           <div class="guide-section">
             <h3>💡 Das Gesetz des Lichts</h3>

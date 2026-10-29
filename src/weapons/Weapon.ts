@@ -19,6 +19,11 @@ export interface PlayerProjectile {
   target?: Enemy | Boss | null;
   homingSpeed?: number;
   onHitExplode?: boolean;
+  boundToLightRadius?: boolean; // Clamps projectile strictly inside the dashed light line!
+  chainBouncesLeft?: number; // For Sparks chain-bounce
+  spawnsSolarZone?: boolean; // For Flare solar burn zone on hit/expiry
+  bypassesShield?: boolean; // For Needles 4th-shot crit needle
+  staggerStrength?: number;
 }
 
 export abstract class Weapon {
@@ -76,6 +81,36 @@ export abstract class Weapon {
   public getEffectiveCooldown(player: Player): number {
     const lvlCdReduction = 1 - (this.level - 1) * 0.05;
     return Math.max(0.15, this.cooldown * lvlCdReduction * player.getCooldownMultiplier());
+  }
+
+  /**
+   * Helper: Finds the nearest enemy or boss to the given origin (x, y) within maxRange.
+   */
+  public findNearestTarget(
+    originX: number,
+    originY: number,
+    enemies: Enemy[],
+    boss: Boss | null,
+    maxRange: number = 950
+  ): Enemy | Boss | null {
+    let nearest: Enemy | Boss | null = null;
+    let minDist = maxRange;
+
+    for (const enemy of enemies) {
+      const d = Math.hypot(enemy.x - originX, enemy.y - originY);
+      if (d < minDist) {
+        minDist = d;
+        nearest = enemy;
+      }
+    }
+    if (boss && !boss.isDefeated) {
+      const d = Math.hypot(boss.x - originX, boss.y - originY);
+      if (d < minDist) {
+        minDist = d;
+        nearest = boss;
+      }
+    }
+    return nearest;
   }
 
   public abstract update(

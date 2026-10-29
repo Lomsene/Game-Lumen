@@ -83,9 +83,13 @@ export class GiftModal {
         ? 'EVOLUTION'
         : `LV ${choice.currentLevel} → ${choice.nextLevel}`;
 
+      const levelBadgeHtml = choice.tag === 'NEW WEAPON'
+        ? ''
+        : `<span class="card-level-badge">${levelText}</span>`;
+
       card.innerHTML = `
-        <span class="card-level-badge">${levelText}</span>
-        <div class="card-icon-box" style="color: var(--neon-${choice.themeColor}); font-size: 38px;">
+        ${levelBadgeHtml}
+        <div class="card-icon-box">
           ${choice.icon}
         </div>
         <h3 class="card-title">${choice.title}</h3>

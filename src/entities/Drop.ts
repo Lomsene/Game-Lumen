@@ -73,24 +73,37 @@ export class Drop {
     const screenY = this.y - cameraY;
 
     // Bobbing / pulsation
-    const pulse = 1 + Math.sin(this.life * 6) * 0.2;
+    const pulse = 1 + Math.sin(this.life * 6) * 0.16;
     const r = this.radius * pulse;
 
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    ctx.shadowColor = this.color;
-    ctx.shadowBlur = 10;
-    ctx.fillStyle = this.color;
 
+    // Soft outer halo glow
+    const grad = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, r * 2.8);
+    grad.addColorStop(0, '#ffffff');
+    grad.addColorStop(0.35, this.color);
+    grad.addColorStop(1, 'transparent');
+
+    ctx.fillStyle = grad;
     ctx.beginPath();
-    ctx.arc(screenX, screenY, r, 0, Math.PI * 2);
+    ctx.arc(screenX, screenY, r * 2.8, 0, Math.PI * 2);
     ctx.fill();
 
     // Inner bright core
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
-    ctx.arc(screenX, screenY, r * 0.5, 0, Math.PI * 2);
+    ctx.arc(screenX, screenY, r * 0.55, 0, Math.PI * 2);
     ctx.fill();
+
+    // Floating value number above light motes (matching screenshot 2!)
+    if (this.type === 'light' && this.value >= 1) {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.font = '600 10px "JetBrains Mono", monospace';
+      ctx.fillStyle = 'rgba(148, 163, 184, 0.72)';
+      ctx.textAlign = 'center';
+      ctx.fillText(`${Math.round(this.value)}`, screenX, screenY - r * 2.6 - 5);
+    }
 
     ctx.restore();
   }

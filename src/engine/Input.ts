@@ -8,6 +8,7 @@ export class InputManager {
   public mousePos: { x: number; y: number } = { x: 0, y: 0 };
   public isMouseDown: boolean = false;
   private dashRequested: boolean = false;
+  private supernovaRequested: boolean = false;
 
   // Touch tracking
   public isTouchDevice: boolean = false;
@@ -35,6 +36,8 @@ export class InputManager {
       this.keys.add(e.code);
       if (['Space', 'ShiftLeft', 'ShiftRight', 'KeyE'].includes(e.code)) {
         this.dashRequested = true;
+      } else if (['KeyR', 'KeyF'].includes(e.code)) {
+        this.supernovaRequested = true;
       }
     });
 
@@ -104,6 +107,26 @@ export class InputManager {
     if (dashIndicator) {
       dashIndicator.addEventListener('click', () => {
         this.dashRequested = true;
+      });
+    }
+
+    const supernovaIndicator = document.getElementById('supernova-indicator');
+    if (supernovaIndicator) {
+      supernovaIndicator.addEventListener('click', () => {
+        this.supernovaRequested = true;
+      });
+    }
+
+    const touchNovaBtn = document.getElementById('touch-nova-btn');
+    if (touchNovaBtn) {
+      touchNovaBtn.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.supernovaRequested = true;
+      });
+      touchNovaBtn.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        this.supernovaRequested = true;
       });
     }
 
@@ -226,6 +249,14 @@ export class InputManager {
   public consumeDash(): boolean {
     if (this.dashRequested) {
       this.dashRequested = false;
+      return true;
+    }
+    return false;
+  }
+
+  public consumeSupernova(): boolean {
+    if (this.supernovaRequested) {
+      this.supernovaRequested = false;
       return true;
     }
     return false;
