@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>LUMEN - Survival Roguelite</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+  <script type="module" crossorigin src="/assets/index-DhrkAovt.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-DiDSxotf.css">
+</head>
+<body>
+  <div id="game-container">
+    <!-- Canvas for gameplay rendering -->
+    <canvas id="game-canvas"></canvas>
+
+    <!-- Ingame HUD matching screenshots -->
+    <div id="hud" class="hud-overlay hidden">
+      <!-- Top Bar -->
+      <div class="hud-top">
+        <!-- Left: Light Bar & Level -->
+        <div class="hud-light-box">
+          <div class="hud-label-row">
+            <span class="hud-label">LIGHT</span>
+            <span id="hud-light-text" class="hud-value">100 / 100</span>
+          </div>
+          <div class="light-bar-track">
+            <div id="hud-light-fill" class="light-bar-fill"></div>
+          </div>
+          <div class="hud-sub-info">
+            <span id="hud-level">LV 1</span>
+            <div id="hud-active-weapons" class="weapon-icons-row"></div>
+          </div>
+        </div>
+
+        <!-- Center: Timer & Phase Name -->
+        <div class="hud-center-box">
+          <div id="hud-timer" class="hud-timer">0:00</div>
+          <div id="hud-phase-name" class="hud-phase-name">THE FIRST DARK</div>
+        </div>
+
+        <!-- Right: Score, Multiplier & Kills -->
+        <div class="hud-score-box">
+          <div id="hud-score" class="hud-score">0</div>
+          <div class="hud-score-sub">
+            <span class="hud-score-label">SCORE</span>
+            <span id="hud-multiplier" class="hud-multiplier">x1.0</span>
+          </div>
+          <div class="hud-kills-row">
+            <span id="hud-shards-ingame" class="hud-shards-val">✨ 0</span>
+            <span id="hud-kills" class="hud-kills-val">0 kills</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Boss Bar (if active) -->
+      <div id="boss-bar-container" class="boss-bar-container hidden">
+        <div class="boss-info-row">
+          <span id="boss-name" class="boss-name">BOSS</span>
+          <span id="boss-phase" class="boss-phase">PHASE 1</span>
+        </div>
+        <div class="boss-bar-track">
+          <div id="boss-bar-fill" class="boss-bar-fill"></div>
+        </div>
+      </div>
+
+      <!-- Bottom Dash Indicator -->
+      <div class="hud-bottom">
+        <div id="dash-indicator" class="dash-circle-box">
+          <svg class="dash-ring-svg" viewBox="0 0 60 60">
+            <circle class="dash-ring-bg" cx="30" cy="30" r="26"></circle>
+            <circle id="dash-ring-progress" class="dash-ring-fg" cx="30" cy="30" r="26"></circle>
+          </svg>
+          <div class="dash-center-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+            </svg>
+          </div>
+          <span class="dash-text">DASH</span>
+        </div>
+      </div>
+
+      <!-- Mobile Touch Controls -->
+      <div id="mobile-controls" class="mobile-controls hidden">
+        <div id="touch-joystick-zone" class="touch-joystick-zone">
+          <div id="touch-joystick-base" class="joystick-base hidden">
+            <div id="touch-joystick-thumb" class="joystick-thumb"></div>
+          </div>
+        </div>
+        <button id="touch-dash-btn" class="touch-dash-btn">
+          <span>DASH</span>
+        </button>
+      </div>
+
+      <!-- Quick Pause Button (Mobile/Top) -->
+      <button id="pause-btn" class="pause-icon-btn" title="Pause">⏸</button>
+    </div>
+
+    <!-- LEVEL UP OVERLAY ("CHOOSE YOUR GIFT") -->
+    <div id="gift-modal" class="modal-overlay hidden">
+      <div class="gift-container">
+        <div class="gift-header">
+          <span id="gift-level-label" class="gift-level-tag">LEVEL 2</span>
+          <h2 class="gift-title">CHOOSE YOUR GIFT</h2>
+        </div>
+
+        <div id="gift-cards" class="gift-cards-grid">
+          <!-- Dynamically populated with 3 cards -->
+        </div>
+
+        <div class="gift-actions">
+          <button id="gift-reroll-btn" class="gift-btn btn-reroll">
+            REROLL (<span id="gift-reroll-count">1</span>)
+          </button>
+          <button id="gift-skip-btn" class="gift-btn btn-skip">
+            SKIP • +12 LIGHT
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MAIN MENU SCREEN -->
+    <div id="main-menu" class="screen-overlay">
+      <div class="menu-content">
+        <div class="title-container">
+          <div class="lumen-orb-anim"></div>
+          <h1 class="game-title">LUMEN</h1>
+          <p class="game-subtitle">Dein Licht ist das Einzige, was dich am Leben erhält.</p>
+        </div>
+
+        <div class="menu-stats-bar">
+          <div class="stat-pill">
+            <span class="stat-icon">✨</span>
+            <span class="stat-label">SPLITTER:</span>
+            <span id="menu-shards" class="stat-value">0</span>
+          </div>
+          <div class="stat-pill">
+            <span class="stat-icon">⏱️</span>
+            <span class="stat-label">REKORD:</span>
+            <span id="menu-record" class="stat-value">0:00</span>
+          </div>
+        </div>
+
+        <div class="menu-buttons">
+          <button id="btn-start-game" class="btn-primary">
+            <span class="btn-glow"></span>
+            SPIEL STARTEN
+          </button>
+          <button id="btn-open-forge" class="btn-secondary">
+            <span class="btn-icon">⚒️</span>
+            DIE SCHMIEDE (FORGE)
+          </button>
+          <button id="btn-open-guide" class="btn-ghost">
+            <span class="btn-icon">📖</span>
+            STEUERUNG & ANLEITUNG
+          </button>
+        </div>
+
+        <div class="menu-footer">
+          <span>Optimiert für Desktop & Smartphone • Letztes Update: 27. Okt. 2026</span>
+          <button id="btn-toggle-sound" class="btn-sound-toggle">🔊 Audio: An</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- DIE SCHMIEDE (FORGE) MODAL -->
+    <div id="forge-modal" class="modal-overlay hidden">
+      <div class="forge-container">
+        <div class="forge-header">
+          <div class="forge-title-group">
+            <span class="forge-icon">⚒️</span>
+            <h2>DIE SCHMIEDE</h2>
+          </div>
+          <div class="forge-currency">
+            <span>✨ Splitter:</span>
+            <span id="forge-shards-display" class="currency-val">0</span>
+          </div>
+        </div>
+        <p class="forge-desc">
+          Verwende im Dunkeln gesammelte Splitter für dauerhafte Verbesserungen. Jeder neue Versuch beginnt stärker!
+        </p>
+
+        <div id="forge-items-grid" class="forge-grid">
+          <!-- Dynamically populated with persistent upgrades -->
+        </div>
+
+        <div class="forge-footer">
+          <button id="btn-close-forge" class="btn-primary">ZURÜCK ZUM MENÜ</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- GAME OVER / RUN SUMMARY MODAL -->
+    <div id="gameover-modal" class="modal-overlay hidden">
+      <div class="gameover-container">
+        <div class="gameover-header">
+          <div id="gameover-orb" class="gameover-orb"></div>
+          <h2 id="gameover-title">DEIN LICHT IST ERLOSCHEN</h2>
+          <p id="gameover-subtitle">Die Dunkelheit hat dich verschlungen.</p>
+        </div>
+
+        <div class="run-stats-grid">
+          <div class="stat-card">
+            <span class="stat-title">ÜBERLEBTE ZEIT</span>
+            <span id="stat-time" class="stat-big">0:00</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-title">SCORE</span>
+            <span id="stat-score" class="stat-big">0</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-title">BESIEGTE FEINDE</span>
+            <span id="stat-kills" class="stat-big">0</span>
+          </div>
+          <div class="stat-card highlight">
+            <span class="stat-title">VERDIENTE SPLITTER</span>
+            <span id="stat-shards" class="stat-big">✨ 0</span>
+          </div>
+        </div>
+
+        <div class="gameover-actions">
+          <button id="btn-gameover-restart" class="btn-primary">
+            <span class="btn-glow"></span>
+            SOFORT NEUSTARTEN (LEERTASTE)
+          </button>
+          <button id="btn-gameover-forge" class="btn-secondary">
+            ⚒️ ZUR SCHMIEDE
+          </button>
+          <button id="btn-gameover-menu" class="btn-ghost">
+            HAUPTMENÜ
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- GUIDE MODAL -->
+    <div id="guide-modal" class="modal-overlay hidden">
+      <div class="guide-container">
+        <h2>STEUERUNG & REGELN</h2>
+        <div class="guide-content">
+          <div class="guide-section">
+            <h3>🎮 Steuerung</h3>
+            <p><strong>Bewegen:</strong> WASD, ZQSD oder Pfeiltasten. Alternativ linke Maustaste gedrückt halten zum Bewegen oder Touchscreen-Ziehen.</p>
+            <p><strong>Angriff:</strong> Automatisch! Deine Waffen erfassen Feinde im Lichtkegel selbstständig.</p>
+            <p><strong>Sprinten / Dash:</strong> Leertaste, Shift oder Rechtsklick für einen Geschwindigkeitsschub mit <em>kurzzeitiger Unverwundbarkeit</em>.</p>
+          </div>
+          <div class="guide-section">
+            <h3>💡 Das Gesetz des Lichts</h3>
+            <p>Dein Licht ist gleichzeitig <strong>Leben</strong>, <strong>Sichtweite</strong> und <strong>Waffenreichweite</strong>. Es verringert sich jede Sekunde!</p>
+            <p>Besiege Feinde, um Lichtfunken und Splitter zu erbeuten. Je heller du bist, desto weiter reichen deine Waffen und desto mehr Schaden teilst du aus – aber umso mehr Feinde werden angelockt!</p>
+          </div>
+          <div class="guide-section">
+            <h3>⚔️ Waffen & Bosse</h3>
+            <p>8 einzigartige Waffen mit mächtigen Evolutionen, 13 Upgrades und herausfordernde Bosse bei 3, 6 und 10 Minuten.</p>
+          </div>
+        </div>
+        <button id="btn-close-guide" class="btn-primary">VERSTANDEN</button>
+      </div>
+    </div>
+
+  </div>
+
+</body>
+</html>
