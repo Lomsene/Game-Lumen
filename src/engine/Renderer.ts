@@ -16,6 +16,7 @@ export class GameRenderer {
   public viewWidth: number = window.innerWidth;
   public viewHeight: number = window.innerHeight;
   public dpr: number = 1;
+  private arenaFloorCanvas: HTMLCanvasElement | null = null;
 
   // Screen shake
   public shakeDuration: number = 0;
@@ -27,19 +28,21 @@ export class GameRenderer {
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
-    const context = canvas.getContext('2d', { alpha: false });
+    const context = canvas.getContext('2d', { alpha: false, desynchronized: true });
     if (!context) throw new Error('Failed to get 2D context');
     this.ctx = context;
 
     this.resize();
     this.initStars();
+    this.initArenaFloorCache();
   }
 
   public resize() {
     this.viewWidth = window.innerWidth;
     this.viewHeight = window.innerHeight;
-    // Render at full native physical resolution (up to 3x Super-Retina/QHD+ displays!)
-    this.dpr = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
+    // Render at crisp physical resolution (2x on High-DPI mobile guarantees razor-sharp vectors at 120 FPS!)
+    const isMobile = this.viewWidth < 1050 || 'ontouchstart' in window;
+    this.dpr = Math.min(isMobile ? 2.0 : 2.5, Math.max(1, window.devicePixelRatio || 1));
 
     this.canvas.width = Math.round(this.viewWidth * this.dpr);
     this.canvas.height = Math.round(this.viewHeight * this.dpr);
@@ -47,6 +50,25 @@ export class GameRenderer {
     this.canvas.style.height = `${this.viewHeight}px`;
 
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+  }
+
+  private initArenaFloorCache() {
+    // Pre-render the static dark radial floor gradient once on a small 512x512 offscreen canvas
+    const c = document.createElement('canvas');
+    c.width = 512;
+    c.height = 512;
+    const cctx = c.getContext('2d');
+    if (cctx) {
+      const g = cctx.createRadialGradient(256, 256, 0, 256, 256, 256);
+      g.addColorStop(0, 'rgba(8, 14, 32, 0.85)');
+      g.addColorStop(0.6, 'rgba(4, 8, 20, 0.92)');
+      g.addColorStop(1, 'rgba(2, 4, 10, 0.98)');
+      cctx.fillStyle = g;
+      cctx.beginPath();
+      cctx.arc(256, 256, 256, 0, Math.PI * 2);
+      cctx.fill();
+    }
+    this.arenaFloorCanvas = c;
   }
 
   private initStars() {
