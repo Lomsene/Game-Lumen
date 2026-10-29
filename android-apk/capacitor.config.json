@@ -1,0 +1,7 @@
+{
+  "appId": "com.aether.eclipse",
+  "appName": "AETHER: ECLIPSE",
+  "webDir": "../dist",
+  "bundledWebRuntime": false
+}
+

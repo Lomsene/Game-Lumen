@@ -12,6 +12,11 @@ export class GameRenderer {
   public cameraX: number = 0;
   public cameraY: number = 0;
 
+  // Logical CSS viewport dimensions & Retina/Super-AMOLED DPR scaling
+  public viewWidth: number = window.innerWidth;
+  public viewHeight: number = window.innerHeight;
+  public dpr: number = 1;
+
   // Screen shake
   public shakeDuration: number = 0;
   public shakeIntensity: number = 0;
@@ -31,8 +36,17 @@ export class GameRenderer {
   }
 
   public resize() {
-    this.canvas.width = window.innerWidth;
-    this.canvas.height = window.innerHeight;
+    this.viewWidth = window.innerWidth;
+    this.viewHeight = window.innerHeight;
+    // Render at full native physical resolution (up to 3x Super-Retina/QHD+ displays!)
+    this.dpr = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
+
+    this.canvas.width = Math.round(this.viewWidth * this.dpr);
+    this.canvas.height = Math.round(this.viewHeight * this.dpr);
+    this.canvas.style.width = `${this.viewWidth}px`;
+    this.canvas.style.height = `${this.viewHeight}px`;
+
+    this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
   }
 
   private initStars() {
@@ -78,8 +92,10 @@ export class GameRenderer {
     solarZones: SolarBurnZone[] = []
   ) {
     const ctx = this.ctx;
-    const w = this.canvas.width;
-    const h = this.canvas.height;
+    // Always apply exact DPR transform at the start of every frame for razor-sharp rendering!
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    const w = this.viewWidth;
+    const h = this.viewHeight;
 
     // Smooth 1:1 camera tracking centered on the player in the vast arena
     const targetCamX = player.x - w / 2;

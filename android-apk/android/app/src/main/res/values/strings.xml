@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">AETHER: ECLIPSE</string>
+    <string name="title_activity_main">AETHER: ECLIPSE</string>
+    <string name="package_name">com.aether.eclipse</string>
+    <string name="custom_url_scheme">com.aether.eclipse</string>
+</resources>
