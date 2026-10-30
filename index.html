@@ -4,12 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <title>AETHER: ECLIPSE - Survival Roguelite</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Outfit:wght@300;400;600;700;800;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/src/style.css" />
+  <meta name="theme-color" content="#03050c" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <title>AETHER: ECLIPSE - Endless Survival Roguelite</title>
 </head>
 <body>
   <div id="game-container">
@@ -18,21 +17,6 @@
 
     <!-- Ingame HUD matching user screenshot -->
     <div id="hud" class="hud-overlay hidden">
-      <!-- Boss Health Bar (appears only during boss encounters at top) -->
-      <div id="boss-bar-container" class="boss-bar-top hidden">
-        <div class="boss-info-row">
-          <div class="boss-title-wrap">
-            <span class="boss-skull">💀</span>
-            <span id="boss-name" class="boss-name">THE FIRST DARK</span>
-          </div>
-          <span id="boss-hp-numbers" class="boss-hp-numbers">3800 / 3800 HP</span>
-          <span id="boss-phase" class="boss-phase">PHASE 1</span>
-        </div>
-        <div class="boss-bar-track">
-          <div id="boss-bar-fill" class="boss-bar-fill"></div>
-        </div>
-      </div>
-
       <!-- Top HUD Area -->
       <div class="hud-top-container">
         <!-- Top Row: Light | Timer | Score -->
@@ -77,9 +61,28 @@
             <span id="hud-shards-ingame"></span>
           </div>
         </div>
+
+        <!-- Boss Health Bar (appears only during boss encounters at top) -->
+        <div id="boss-bar-container" class="boss-bar-top hidden">
+          <div class="boss-info-row">
+            <div class="boss-title-wrap">
+              <span class="boss-skull">💀</span>
+              <span id="boss-name" class="boss-name">THE FIRST DARK</span>
+            </div>
+            <span id="boss-hp-numbers" class="boss-hp-numbers">0 / 0 HP</span>
+            <span id="boss-phase" class="boss-phase">PHASE 1</span>
+          </div>
+          <div class="boss-bar-track">
+            <div id="boss-bar-fill" class="boss-bar-fill"></div>
+          </div>
+        </div>
       </div>
 
-      <!-- Left Active Weapons Stack (matching screenshot: L1 pill on left side) -->
+      <!-- Tutorial / hint toast -->
+      <div id="hud-toast" class="hud-toast hidden"></div>
+      <div id="fps-counter" class="fps-counter hidden"></div>
+
+      <!-- Left Active Weapons Stack -->
       <div id="hud-active-weapons" class="hud-weapons-left"></div>
 
       <!-- Bottom Dash & Supernova Indicators -->
@@ -92,13 +95,13 @@
           <span class="dash-text">DASH</span>
         </div>
 
-        <div id="supernova-indicator" class="dash-circle-box supernova-circle-box nova-ready" title="Supernova: 97% Licht-Opferung (Taste R / F) - 1x alle 10 Min.">
+        <div id="supernova-indicator" class="dash-circle-box supernova-circle-box nova-ready" title="Supernova: wird durch Kills geladen, opfert 50% Licht (Taste R / F)">
           <svg class="dash-ring-svg" viewBox="0 0 60 60">
             <circle class="dash-ring-bg nova-ring-bg" cx="30" cy="30" r="24"></circle>
             <circle id="supernova-ring-progress" class="dash-ring-fg nova-ring-fg" cx="30" cy="30" r="24"></circle>
           </svg>
           <span style="font-size:15px; line-height:1;">⚡</span>
-          <span id="supernova-text" class="dash-text nova-text">NOVA [R]</span>
+          <span id="supernova-text" class="dash-text nova-text">0%</span>
         </div>
       </div>
 
@@ -109,8 +112,9 @@
             <div id="touch-joystick-thumb" class="joystick-thumb"></div>
           </div>
         </div>
-        <button id="touch-nova-btn" class="touch-nova-btn">
-          <span>⚡ NOVA</span>
+        <button id="touch-nova-btn" class="touch-nova-btn" aria-label="Supernova">
+          <span id="touch-nova-fill" class="touch-nova-fill"></span>
+          <span class="touch-btn-label">⚡ NOVA</span>
         </button>
         <button id="touch-dash-btn" class="touch-dash-btn">
           <span>DASH</span>
@@ -126,7 +130,7 @@
       <div class="gift-container">
         <div class="gift-header">
           <span id="gift-level-label" class="gift-level-tag">LEVEL 2</span>
-          <h2 class="gift-title">CHOOSE YOUR GIFT</h2>
+          <h2 class="gift-title">WÄHLE DEINE GABE</h2>
         </div>
 
         <div id="gift-cards" class="gift-cards-grid">
@@ -138,7 +142,7 @@
             REROLL (<span id="gift-reroll-count">1</span>)
           </button>
           <button id="gift-skip-btn" class="gift-btn btn-skip">
-            SKIP • +12 LIGHT
+            ÜBERSPRINGEN • +12 LICHT
           </button>
         </div>
       </div>
@@ -163,6 +167,11 @@
             <span class="stat-icon">⏱️</span>
             <span class="stat-label">REKORD:</span>
             <span id="menu-record" class="stat-value">0:00</span>
+          </div>
+          <div class="stat-pill">
+            <span class="stat-icon">💀</span>
+            <span class="stat-label">BOSSE:</span>
+            <span id="menu-boss-record" class="stat-value">0</span>
           </div>
         </div>
 
@@ -194,15 +203,20 @@
               🎨 SKINS
             </button>
           </div>
-          <button id="btn-open-guide" class="btn-ghost">
-            <span class="btn-icon">📖</span>
-            STEUERUNG & ANLEITUNG
-          </button>
+          <div style="display:flex; gap:10px; width:100%;">
+            <button id="btn-open-guide" class="btn-ghost" style="flex:1;">
+              <span class="btn-icon">📖</span>
+              ANLEITUNG
+            </button>
+            <button id="btn-open-settings" class="btn-ghost" style="flex:1;">
+              <span class="btn-icon">⚙️</span>
+              EINSTELLUNGEN
+            </button>
+          </div>
         </div>
 
         <div class="menu-footer">
-          <span>Dark-Synthwave Soundtrack • Void Obelisks & Overdrive Edition</span>
-          <button id="btn-toggle-sound" class="btn-sound-toggle">🔊 Musik & SFX: An</button>
+          <span>Endloser Survival-Roguelite • Wie lange hält dein Licht?</span>
         </div>
       </div>
     </div>
@@ -263,6 +277,14 @@
             <span class="stat-title">BESIEGTE FEINDE</span>
             <span id="stat-kills" class="stat-big">0</span>
           </div>
+          <div class="stat-card">
+            <span class="stat-title">LEVEL</span>
+            <span id="stat-level" class="stat-big">1</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-title">BOSSE BESIEGT</span>
+            <span id="stat-bosses" class="stat-big">0</span>
+          </div>
           <div class="stat-card highlight">
             <span class="stat-title">VERDIENTE SPLITTER</span>
             <span id="stat-shards" class="stat-big">✨ 0</span>
@@ -272,7 +294,7 @@
         <div class="gameover-actions">
           <button id="btn-gameover-restart" class="btn-primary">
             <span class="btn-glow"></span>
-            SOFORT NEUSTARTEN (LEERTASTE)
+            NOCHMAL (ENTER)
           </button>
           <button id="btn-gameover-forge" class="btn-secondary">
             ⚒️ ZUR SCHMIEDE
@@ -291,10 +313,11 @@
         <div class="guide-content">
           <div class="guide-section">
             <h3>🎮 Steuerung</h3>
-            <p><strong>Bewegen:</strong> WASD, ZQSD oder Pfeiltasten. Alternativ linke Maustaste gedrückt halten zum Bewegen oder Touchscreen-Ziehen.</p>
+            <p><strong>Bewegen:</strong> WASD, ZQSD oder Pfeiltasten • Maus gedrückt halten • Touch: irgendwo ziehen (virtueller Joystick).</p>
             <p><strong>Angriff:</strong> Automatisch! Deine Waffen erfassen Feinde im Lichtkegel selbstständig.</p>
-            <p><strong>Sprinten / Dash:</strong> Leertaste, Shift oder Rechtsklick für einen Geschwindigkeitsschub mit <em>kurzzeitiger Unverwundbarkeit</em>.</p>
-            <p><strong>⚡ Ultimative Supernova (Taste R / F):</strong> Opfert sofort <strong>97% deines aktuellen Lichts</strong> (1x alle 10 Minuten), vernichtet alle Projektile & Feinde im Umkreis, gewährt Unverwundbarkeit, Overdrive und erzeugt einen schützenden Ring aus Sonnenfeuern!</p>
+            <p><strong>Dash:</strong> Leertaste, Shift, E oder Rechtsklick (Touch: DASH-Knopf) – kurzer Sprint mit <em>Unverwundbarkeit</em>, der nahe Geschosse auslöscht.</p>
+            <p><strong>⚡ Supernova (R / F):</strong> Wird durch <strong>Kills geladen</strong> (Elites zählen 5-fach, Boss-Kills laden sie komplett). Opfert 50% deines Lichts, verwüstet den Bildschirm und macht dich kurz unverwundbar – während dieser Zeit verlierst du kein Licht.</p>
+            <p><strong>Pause:</strong> ESC / P oder ⏸. <strong>Gaben:</strong> Tasten 1–3 wählen, R neu würfeln, S überspringen.</p>
           </div>
           <div class="guide-section">
             <h3>💡 Das Gesetz des Lichts</h3>
@@ -303,10 +326,68 @@
           </div>
           <div class="guide-section">
             <h3>⚔️ Waffen & Bosse</h3>
-            <p>8 einzigartige Waffen mit mächtigen Evolutionen, 13 Upgrades und herausfordernde Bosse bei 3, 6 und 10 Minuten.</p>
+            <p>8 Waffen mit Evolutionen (max. 4 gleichzeitig) und über 20 Upgrades.</p>
+            <p><strong>Endlos:</strong> Nach jeweils ca. 2:30 Minuten ohne Boss erscheint der nächste Boss – jeder hat <strong>2,5× so viel Leben</strong> wie der vorherige und neue Fähigkeiten. Bosse lassen viele große Drops fallen.</p>
+            <p>Die Gegner werden mit der Zeit stärker, zahlreicher und gefährlicher. Es gibt kein Ende – nur deinen Rekord.</p>
+          </div>
+          <div class="guide-section">
+            <h3>💎 Drops</h3>
+            <p><strong>Blaue Kristalle</strong> geben Licht, <strong>goldene Splitter</strong> sind deine Währung für die Schmiede. Große Varianten sind mehr wert und werden aus größerer Entfernung angezogen.</p>
+            <p><strong>Tipp:</strong> Die Schmiede-Upgrades „Morgenschild“, „Vorbereitung“ und „Startgabe“ machen die ersten Minuten deutlich leichter.</p>
           </div>
         </div>
         <button id="btn-close-guide" class="btn-primary">VERSTANDEN</button>
+      </div>
+    </div>
+
+    <!-- PAUSE MENU -->
+    <div id="pause-modal" class="modal-overlay hidden">
+      <div class="pause-container">
+        <h2>PAUSE</h2>
+        <div id="pause-build" class="pause-build"></div>
+        <div class="pause-actions">
+          <button id="btn-pause-resume" class="btn-primary">WEITER</button>
+          <button id="btn-pause-settings" class="btn-secondary">⚙️ EINSTELLUNGEN</button>
+          <button id="btn-pause-quit" class="btn-ghost">AUFGEBEN</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- SETTINGS -->
+    <div id="settings-modal" class="modal-overlay hidden">
+      <div class="settings-container">
+        <h2>EINSTELLUNGEN</h2>
+        <div class="settings-grid">
+          <h3>Audio</h3>
+          <label class="setting-row"><span>Musik</span><input id="set-music" type="range" min="0" max="100" step="5" /></label>
+          <label class="setting-row"><span>Effekte</span><input id="set-sfx" type="range" min="0" max="100" step="5" /></label>
+          <label class="setting-row"><span>Stumm</span><input id="set-muted" type="checkbox" /></label>
+
+          <h3>Grafik</h3>
+          <label class="setting-row"><span>Qualität</span>
+            <select id="set-quality">
+              <option value="auto">Automatisch (empfohlen)</option>
+              <option value="high">Hoch</option>
+              <option value="medium">Mittel</option>
+              <option value="low">Niedrig (Akku sparen)</option>
+            </select>
+          </label>
+          <label class="setting-row"><span>Bildschirmwackeln</span><input id="set-shake" type="checkbox" /></label>
+          <label class="setting-row"><span>Schadenszahlen</span><input id="set-dmgnums" type="checkbox" /></label>
+          <label class="setting-row"><span>FPS anzeigen</span><input id="set-fps" type="checkbox" /></label>
+
+          <h3>Steuerung</h3>
+          <label class="setting-row"><span>Joystick</span>
+            <select id="set-joystick">
+              <option value="floating">Schwebend (wo du tippst)</option>
+              <option value="fixed">Fest (unten)</option>
+            </select>
+          </label>
+          <label class="setting-row"><span>Linkshänder (Knöpfe links)</span><input id="set-lefthanded" type="checkbox" /></label>
+          <label class="setting-row"><span>Vibration</span><input id="set-haptics" type="checkbox" /></label>
+          <button id="btn-reset-tutorial" class="btn-ghost btn-small">Tipps erneut anzeigen</button>
+        </div>
+        <button id="btn-close-settings" class="btn-primary">FERTIG</button>
       </div>
     </div>
 

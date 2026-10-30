@@ -1,6 +1,8 @@
 import { forge, PLAYER_CLASSES, PLAYER_SKINS, PlayerClassId, PlayerSkinId } from '../meta/Forge';
 import { sound } from '../engine/Sound';
 import { ParticleSystem } from '../engine/Particle';
+import { Balance } from '../engine/Balance';
+import { drawGlow } from '../engine/GlowCache';
 
 export class Player {
   public x: number = 0;
@@ -8,6 +10,8 @@ export class Player {
   public vx: number = 0;
   public vy: number = 0;
   public radius: number = 16;
+  /** Smaller collision radius than the drawn orb for fair touch controls. */
+  public hurtRadius: number = Balance.playerHurtRadius;
 
   // Class & Skin Identity
   public classId: PlayerClassId = 'wanderer';
@@ -16,7 +20,6 @@ export class Player {
   // Light System (Health, Sight, Range)
   public light: number = 100;
   public maxLight: number = 100;
-  public baseDrainRate: number = 3.1; // Sweet-spot survival pressure: intense but fair!
 
   // Level & XP
   public level: number = 1;
@@ -38,9 +41,14 @@ export class Player {
   public dashDirection: { x: number; y: number } = { x: 1, y: 0 };
   public invulnerableTimer: number = 0;
 
-  // Active Ultimate: Supernova / Licht-Opfer (97% Light Sacrifice, 1x per 10 minutes = 600s)
-  public supernovaCooldown: number = 0;
-  public supernovaMaxCooldown: number = 600;
+  // Active Ultimate: Supernova / Licht-Opfer - charged by kills
+  public novaCharge: number = 0;
+  public novaUses: number = 0;
+  /** While > 0 the Supernova protects you: no light drain, no damage. */
+  public novaShieldTimer: number = 0;
+
+  // Morgenschild (Forge): shield charges that each absorb one hit completely
+  public wardCharges: number = 0;
 
   // Movement speed
   public baseSpeed: number = 210;
@@ -51,6 +59,8 @@ export class Player {
   public kills: number = 0;
   public shardsCollectedThisRun: number = 0;
   public passives: Map<string, number> = new Map();
+  /** Stacking damage from repeatable bonus gifts (after everything is maxed). */
+  public bonusDamage: number = 0;
 
   // Shield mechanic (Prism Shield passive)
   public shieldActive: boolean = false;
@@ -80,7 +90,7 @@ export class Player {
     const vanguardMastery = this.classId === 'vanguard' ? forge.getLevel('classMasteryVanguard') * 12 : 0;
     const classLightBonus = this.classId === 'vanguard' ? 30 : this.classId === 'hunter' ? -15 : 0;
 
-    this.maxLight = Math.max(60, 100 + flameLvl * 12 + classLightBonus + vanguardMastery);
+    this.maxLight = Math.max(60, 100 + flameLvl * 15 + classLightBonus + vanguardMastery);
     this.light = this.maxLight;
 
     // Dash Cooldown from Forge + Class modifiers
@@ -88,12 +98,14 @@ export class Player {
     const hunterDashMult = this.classId === 'hunter' ? 0.75 : 1.0;
     this.dashMaxCooldown = Math.max(1.0, 2.8 * (1 - quickstepLvl * 0.06) * hunterDashMult);
 
-    this.supernovaCooldown = 0;
-    this.supernovaMaxCooldown = 600; // 10 minutes (600s)
+    this.novaCharge = 0;
+    this.novaUses = 0;
+    this.novaShieldTimer = 0;
+    this.wardCharges = forge.getLevel('dawnWard');
 
     this.level = 1;
     this.xp = 0;
-    this.xpToNextLevel = 10;
+    this.xpToNextLevel = Balance.xpToNext(1);
     this.kills = 0;
     this.score = 0;
     this.scoreMultiplier = 1.0;
@@ -102,6 +114,7 @@ export class Player {
     this.comboTimer = 0;
     this.overdriveTimer = 0;
     this.passives.clear();
+    this.bonusDamage = 0;
   }
 
   public getLightRadius(): number {
@@ -131,14 +144,14 @@ export class Player {
   }
 
   public getDamageMultiplier(): number {
-    // Light scaling bonus: brighter = hits harder
-    const lightBonus = this.light / 200;
+    // Light scaling bonus: brighter = hits harder (capped so huge max-light builds don't snowball)
+    const lightBonus = Math.min(this.light, 160) / 200;
     const radiantLvl = this.passives.get('radiantIntensity') ?? 0;
     const bloodPactLvl = this.passives.get('bloodPact') ?? 0;
     const voidGlassLvl = this.passives.get('voidGlass') ?? 0;
     const solarWrathLvl = this.passives.get('solarWrath') ?? 0;
     const executionerLvl = this.passives.get('voidExecutioner') ?? 0;
-    const forgeBonus = forge.getLevel('soulLuminance') * 0.06;
+    const forgeBonus = forge.getLevel('soulLuminance') * 0.08;
     const classDmgBonus =
       (this.classId === 'hunter' ? 0.30 : 0) +
       (this.classId === 'architect' ? forge.getLevel('classMasteryArchitect') * 0.10 : 0) +
@@ -146,7 +159,7 @@ export class Player {
       (this.passives.get('vanguardBastion') ?? 0) * 0.20 +
       (this.passives.get('wandererHarmony') ?? 0) * 0.16;
     const overdriveDmg = this.overdriveTimer > 0 ? 0.25 : 0;
-    return (1 + lightBonus) * (1 + radiantLvl * 0.15 + solarWrathLvl * 0.22 + executionerLvl * 0.20 + bloodPactLvl * 0.45 + voidGlassLvl * 0.35 + forgeBonus + classDmgBonus + overdriveDmg);
+    return (1 + lightBonus) * (1 + radiantLvl * 0.15 + solarWrathLvl * 0.22 + executionerLvl * 0.20 + bloodPactLvl * 0.45 + voidGlassLvl * 0.35 + forgeBonus + classDmgBonus + overdriveDmg + this.bonusDamage);
   }
 
   public getCooldownMultiplier(): number {
@@ -188,23 +201,39 @@ export class Player {
     return 100 * (1 + magnetLvl * 0.6 + forgeMagnet + classMagnet);
   }
 
+  public getNovaChargeNeeded(): number {
+    return Balance.novaChargeNeeded(this.novaUses);
+  }
+
+  public isNovaReady(): boolean {
+    return this.novaCharge >= this.getNovaChargeNeeded();
+  }
+
+  /** Kills charge the Supernova (normal = 1, elite = 5). */
+  public addNovaCharge(points: number) {
+    const chronoBonus = (this.passives.get('chronoAccelerator') ?? 0) * 0.25;
+    const catalystBonus = forge.getLevel('supernovaCatalyst') * 0.08;
+    this.novaCharge = Math.min(this.getNovaChargeNeeded(), this.novaCharge + points * (1 + chronoBonus + catalystBonus));
+  }
+
   /**
    * Active Ultimate: Supernova / Licht-Opfer
-   * Sacrifices 97% of current Light (retaining 3% of current light, min 1.5 light)
-   * Cooldown: 10 minutes (600s)
-   * Returns amount of sacrificed light if triggered, or 0 if on cooldown / too low light.
+   * Requires a full kill charge. Sacrifices half of the current light and turns it into
+   * a massive blast. Returns the sacrificed light, or 0 if not ready.
    */
   public triggerSupernova(): number {
-    if (this.supernovaCooldown > 0 || this.light <= 8) return 0;
+    if (!this.isNovaReady() || this.light <= 8) return 0;
 
-    const sacrificedLight = this.light * 0.97;
-    this.light = Math.max(1.5, this.light * 0.03);
-    this.supernovaCooldown = this.supernovaMaxCooldown;
+    const sacrificedLight = this.light * Balance.novaSacrifice;
+    this.light -= sacrificedLight;
+    this.novaCharge = 0;
+    this.novaUses += 1;
 
     const catalystLvl = forge.getLevel('supernovaCatalyst');
     const ascensionLvl = this.passives.get('novaAscension') ?? 0;
-    this.invulnerableTimer = 3.5 + catalystLvl * 0.5 + ascensionLvl * 0.8;
-    this.overdriveTimer = Math.max(this.overdriveTimer, 10.0 + catalystLvl * 1.5 + ascensionLvl * 2.5);
+    this.novaShieldTimer = 3.0 + catalystLvl * 0.4 + ascensionLvl * 0.6;
+    this.invulnerableTimer = Math.max(this.invulnerableTimer, this.novaShieldTimer);
+    this.overdriveTimer = Math.max(this.overdriveTimer, 8.0 + catalystLvl * 1.5 + ascensionLvl * 2.5);
 
     sound.playLevelUp();
     sound.playPulse();
@@ -216,7 +245,8 @@ export class Player {
 
     this.isDashing = true;
     this.dashTimer = this.dashDuration;
-    this.invulnerableTimer = this.dashDuration + 0.1;
+    const quickstepInvuln = forge.getLevel('quickstep') * 0.04;
+    this.invulnerableTimer = Math.max(this.invulnerableTimer, this.dashDuration + 0.1 + quickstepInvuln);
     this.dashCooldown = this.dashMaxCooldown;
 
     // Blink passive upgrade
@@ -229,8 +259,21 @@ export class Player {
     return true;
   }
 
+  /** Returns true if the hit actually cost light. */
   public takeDamage(amount: number, particles?: ParticleSystem): boolean {
     if (this.invulnerableTimer > 0) return false;
+
+    // Morgenschild charges absorb whole hits
+    if (this.wardCharges > 0) {
+      this.wardCharges -= 1;
+      this.invulnerableTimer = Balance.hitInvulnerability;
+      if (particles) {
+        particles.emitShockwave(this.x, this.y, 110, '#fde68a', 4);
+        particles.emitBannerText(this.x, this.y - 20, this.wardCharges > 0 ? `SCHILD (${this.wardCharges})` : 'SCHILD GEBROCHEN', '#fde68a');
+      }
+      sound.playPulse();
+      return false;
+    }
 
     // Prism Shield absorption
     if (this.shieldActive) {
@@ -245,7 +288,7 @@ export class Player {
     }
 
     this.light = Math.max(0, this.light - amount);
-    this.invulnerableTimer = 0.28; // Tighter invulnerability window so positioning matters!
+    this.invulnerableTimer = Balance.hitInvulnerability;
     this.comboCount = Math.floor(this.comboCount * 0.5); // Taking hit halves streak
     sound.playHit();
 
@@ -260,16 +303,18 @@ export class Player {
     this.light = Math.min(this.maxLight, this.light + amount);
   }
 
-  public addXp(amount: number): boolean {
-    this.xp += amount;
-    if (this.xp >= this.xpToNextLevel) {
+  /** Adds XP and returns how many levels were gained (can be more than one). */
+  public addXp(amount: number): number {
+    this.xp += amount * (1 + forge.getLevel('seasonedSoul') * 0.12);
+    let gained = 0;
+    while (this.xp >= this.xpToNextLevel) {
       this.xp -= this.xpToNextLevel;
       this.level += 1;
-      this.xpToNextLevel = Math.floor(this.xpToNextLevel * 1.28 + 6);
-      sound.playLevelUp();
-      return true; // Level up triggered!
+      this.xpToNextLevel = Balance.xpToNext(this.level);
+      gained += 1;
     }
-    return false;
+    if (gained > 0) sound.playLevelUp();
+    return gained;
   }
 
   public update(dt: number, moveInput: { x: number; y: number }, particles: ParticleSystem, elapsedMinutes: number = 0) {
@@ -282,11 +327,13 @@ export class Player {
     const vanguardDrainReduction =
       (this.classId === 'vanguard' ? 0.15 : 0) +
       (this.passives.get('vanguardBastion') ?? 0) * 0.14;
-    const drainReduction = Math.max(0.35, 1 - enduranceLvl * 0.05 - innerCoreLvl * 0.18 - vanguardDrainReduction + bloodPactLvl * 0.2);
-    const timeEscalation = elapsedMinutes * 0.45; // Smooth, fair darkness escalation
+    const drainReduction = Math.max(0.35, 1 - enduranceLvl * 0.06 - innerCoreLvl * 0.18 - vanguardDrainReduction + bloodPactLvl * 0.2);
     const riftMultiplier = this.inShadowRift ? 2.1 : 1.0;
-    const effectiveDrain = Math.max(1.0, (this.baseDrainRate + timeEscalation) * drainReduction * riftMultiplier);
-    this.light = Math.max(0, this.light - effectiveDrain * dt);
+    const effectiveDrain = Math.max(1.0, Balance.lightDrain(elapsedMinutes) * drainReduction * riftMultiplier);
+    // Supernova protection pauses the drain so the sacrifice is never an instant death
+    if (this.novaShieldTimer <= 0) {
+      this.light = Math.max(0, this.light - effectiveDrain * dt);
+    }
     this.inShadowRift = false;
 
     // 2. Dash & Movement
@@ -350,8 +397,8 @@ export class Player {
     if (this.dashCooldown > 0) {
       this.dashCooldown = Math.max(0, this.dashCooldown - dt);
     }
-    if (this.supernovaCooldown > 0) {
-      this.supernovaCooldown = Math.max(0, this.supernovaCooldown - dt);
+    if (this.novaShieldTimer > 0) {
+      this.novaShieldTimer = Math.max(0, this.novaShieldTimer - dt);
     }
     if (this.invulnerableTimer > 0) {
       this.invulnerableTimer = Math.max(0, this.invulnerableTimer - dt);
@@ -423,26 +470,32 @@ export class Player {
 
     // 2. Soft wide outer bloom matching equipped skin or Overdrive
     const isOverdrive = this.overdriveTimer > 0;
-    const outerBloom = ctx.createRadialGradient(screenX, screenY, 2, screenX, screenY, this.radius * 3.4);
-    if (isOverdrive) {
-      outerBloom.addColorStop(0, 'rgba(254, 243, 199, 0.95)');
-      outerBloom.addColorStop(0.25, 'rgba(251, 191, 36, 0.65)');
-      outerBloom.addColorStop(0.55, 'rgba(245, 158, 11, 0.22)');
-    } else if (isPrismatic) {
-      outerBloom.addColorStop(0, '#ffffff');
-      outerBloom.addColorStop(0.28, `hsla(${hue}, 95%, 62%, 0.58)`);
-      outerBloom.addColorStop(0.6, `hsla(${(hue + 90) % 360}, 95%, 55%, 0.22)`);
-    } else {
-      outerBloom.addColorStop(0, skin.coreColor);
-      outerBloom.addColorStop(0.25, `rgba(${skin.trailRgba}, 0.58)`);
-      outerBloom.addColorStop(0.55, `rgba(${skin.trailRgba}, 0.20)`);
-    }
-    outerBloom.addColorStop(1, 'transparent');
+    const bloomColor = isOverdrive ? '#fbbf24' : isPrismatic ? '#ec4899' : skin.primaryColor;
+    const baseAlpha = ctx.globalAlpha;
+    ctx.globalAlpha = baseAlpha * 0.6;
+    drawGlow(ctx, screenX, screenY, this.radius * 3.4, bloomColor);
+    ctx.globalAlpha = baseAlpha * 0.8;
+    drawGlow(ctx, screenX, screenY, this.radius * 1.4, '#ffffff');
+    ctx.globalAlpha = baseAlpha;
 
-    ctx.fillStyle = outerBloom;
-    ctx.beginPath();
-    ctx.arc(screenX, screenY, this.radius * 3.4, 0, Math.PI * 2);
-    ctx.fill();
+    // Supernova protection bubble
+    if (this.novaShieldTimer > 0) {
+      ctx.strokeStyle = '#fde68a';
+      ctx.lineWidth = 2.5;
+      ctx.globalAlpha = baseAlpha * (0.5 + Math.sin(this.animTimer * 12) * 0.25);
+      ctx.beginPath();
+      ctx.arc(screenX, screenY, this.radius + 18, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = baseAlpha;
+    }
+    // Morgenschild charges as small orbiting pips
+    for (let i = 0; i < this.wardCharges; i++) {
+      const a = this.animTimer * 2 + (i / Math.max(1, this.wardCharges)) * Math.PI * 2;
+      ctx.fillStyle = '#fde68a';
+      ctx.beginPath();
+      ctx.arc(screenX + Math.cos(a) * (this.radius + 10), screenY + Math.sin(a) * (this.radius + 10), 2.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     // 3. Rotating geometric ring around core based on Skin style!
     ctx.save();
@@ -451,8 +504,6 @@ export class Player {
     ctx.rotate(ringRot);
 
     ctx.strokeStyle = isOverdrive ? '#fde68a' : primaryCol;
-    ctx.shadowColor = isOverdrive ? '#fbbf24' : secondaryCol;
-    ctx.shadowBlur = 10;
     ctx.lineWidth = 2.4;
     ctx.lineCap = 'round';
 
@@ -552,8 +603,6 @@ export class Player {
     const squash = 1 / Math.sqrt(this.stretchFactor);
     ctx.scale(this.stretchFactor, squash);
 
-    ctx.shadowColor = primaryCol;
-    ctx.shadowBlur = 14;
     ctx.fillStyle = skin.coreColor;
     ctx.beginPath();
     ctx.arc(0, 0, this.radius * 0.58 * pulse, 0, Math.PI * 2);

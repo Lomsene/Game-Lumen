@@ -6,6 +6,8 @@
  * - Musical scale-locked SFX (D Minor Pentatonic / Dorian) so pickups & combat blend into the music
  * - Rich multi-layered FM + Filtered Noise weapon & explosion synthesis
  */
+import { settings } from '../meta/Settings';
+
 export class SoundEngine {
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
@@ -17,6 +19,8 @@ export class SoundEngine {
   private isMusicPlaying: boolean = false;
   private stepTimer: number | null = null;
   private currentStep: number = 0;
+  /** AudioContext time of the next sequencer step (look-ahead scheduling). */
+  private nextStepTime: number = 0;
   private intensity: number = 0.25; // 0.0 to 1.0 (scales with combat / boss)
   private lastHeartbeat: number = 0;
   private lastHitTime: number = 0;
@@ -68,10 +72,10 @@ export class SoundEngine {
       this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : 0.85, this.ctx.currentTime);
 
       this.musicGain = this.ctx.createGain();
-      this.musicGain.gain.setValueAtTime(0.42, this.ctx.currentTime);
+      this.musicGain.gain.setValueAtTime(0.7 * settings.data.musicVolume, this.ctx.currentTime);
 
       this.sfxGain = this.ctx.createGain();
-      this.sfxGain.gain.setValueAtTime(0.68, this.ctx.currentTime);
+      this.sfxGain.gain.setValueAtTime(0.85 * settings.data.sfxVolume, this.ctx.currentTime);
 
       this.musicGain.connect(this.compressor);
       this.sfxGain.connect(this.compressor);
@@ -92,6 +96,27 @@ export class SoundEngine {
     const data = this.noiseBuffer.getChannelData(0);
     for (let i = 0; i < bufferSize; i++) {
       data[i] = Math.random() * 2 - 1;
+    }
+  }
+
+  /** Applies volume / mute values from the settings. */
+  public applySettings() {
+    this.setMuted(settings.data.muted);
+    if (this.ctx && this.musicGain && this.sfxGain) {
+      this.musicGain.gain.setTargetAtTime(0.7 * settings.data.musicVolume, this.ctx.currentTime, 0.05);
+      this.sfxGain.gain.setTargetAtTime(0.85 * settings.data.sfxVolume, this.ctx.currentTime, 0.05);
+    }
+  }
+
+  /** Pause all audio (app in background). */
+  public suspend() {
+    if (this.ctx && this.ctx.state === 'running') this.ctx.suspend();
+  }
+
+  public resume() {
+    if (this.ctx && this.ctx.state === 'suspended') {
+      this.ctx.resume();
+      this.nextStepTime = this.ctx.currentTime + 0.05;
     }
   }
 
@@ -123,15 +148,21 @@ export class SoundEngine {
     if (this.isMusicPlaying) return;
     this.isMusicPlaying = true;
     this.currentStep = 0;
+    this.nextStepTime = (this.ctx?.currentTime ?? 0) + 0.05;
 
-    // 124 BPM -> 1 beat = 483.87ms -> 16th note = ~121ms
-    const stepMs = 121;
+    // 124 BPM -> 16th note = ~121ms. A short timer schedules notes slightly ahead on the
+    // audio clock, so the beat stays tight even when the main thread stutters on mobile.
+    const stepSec = 60 / 124 / 4;
     this.stepTimer = window.setInterval(() => {
-      if (!this.isMuted && this.ctx && this.ctx.state === 'running') {
-        this.playSequencerStep(this.currentStep);
+      if (!this.ctx || this.ctx.state !== 'running') return;
+      const now = this.ctx.currentTime;
+      if (this.nextStepTime < now - 0.2) this.nextStepTime = now + 0.02; // Resync after a stall
+      while (this.nextStepTime < now + 0.12) {
+        if (!this.isMuted) this.playSequencerStep(this.currentStep, this.nextStepTime);
         this.currentStep = (this.currentStep + 1) % 64;
+        this.nextStepTime += stepSec;
       }
-    }, stepMs);
+    }, 30);
   }
 
   public stopAmbience() {
@@ -142,9 +173,8 @@ export class SoundEngine {
     }
   }
 
-  private playSequencerStep(step: number) {
+  private playSequencerStep(step: number, now: number) {
     if (!this.ctx || !this.musicGain) return;
-    const now = this.ctx.currentTime;
     const barStep = step % 16;
     const barIndex = Math.floor(step / 4) % 16;
 

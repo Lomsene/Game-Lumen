@@ -3,6 +3,7 @@ package com.aether.eclipse;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.WindowManager;
+import androidx.activity.OnBackPressedCallback;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
@@ -23,6 +24,16 @@ public class MainActivity extends BridgeActivity {
         // Keep screen awake during gameplay & enable edge-to-edge immersive landscape mode
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         hideSystemBars();
+
+        // Hardware/gesture back: let the game pause or close the top menu instead of quitting the app
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                if (getBridge() != null && getBridge().getWebView() != null) {
+                    getBridge().getWebView().evaluateJavascript("window.dispatchEvent(new Event('aether-back'))", null);
+                }
+            }
+        });
     }
 
     @Override

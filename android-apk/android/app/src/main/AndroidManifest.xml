@@ -39,4 +39,6 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Haptic feedback (navigator.vibrate) -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 </manifest>

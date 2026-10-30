@@ -20,8 +20,8 @@ export class PulseWeapon extends Weapon {
       1.75,
       36,
       '◎',
-      'A shockwave bursts from you to the exact edge of your light.',
-      'Supernova ignites a persistent burning plasma ring along your light edge.'
+      'Eine Schockwelle bricht bis zum Rand deines Lichts hervor und stößt Feinde zurück.',
+      'Entzündet nach jedem Puls einen brennenden Plasmaring am Rand deines Lichts.'
     );
   }
 
@@ -54,9 +54,8 @@ export class PulseWeapon extends Weapon {
           enemy.takeDamage(dmg, particles, { x: player.x, y: player.y });
           // Knockback scales with weapon level
           if (dist > 5) {
-            const kb = 135 + this.level * 22;
-            enemy.vx += ((enemy.x - player.x) / dist) * kb;
-            enemy.vy += ((enemy.y - player.y) / dist) * kb;
+            const kb = 260 + this.level * 40;
+            enemy.applyKnockback(((enemy.x - player.x) / dist) * kb, ((enemy.y - player.y) / dist) * kb);
           }
         }
       }
@@ -70,10 +69,13 @@ export class PulseWeapon extends Weapon {
     if (this.novaRingTimer > 0) {
       this.novaRingTimer -= dt;
       const ringDmg = this.getEffectiveDamage(player) * 0.55 * dt;
+      if (boss && Math.abs(Math.hypot(boss.x - player.x, boss.y - player.y) - radius) < 28 + boss.radius) {
+        boss.takeDamage(ringDmg, particles, false, true);
+      }
       for (const enemy of enemies) {
         const d = Math.hypot(enemy.x - player.x, enemy.y - player.y);
         if (Math.abs(d - radius) < 28) {
-          enemy.takeDamage(ringDmg, particles);
+          enemy.takeDamage(ringDmg, particles, undefined, false, true);
         }
       }
     }
@@ -84,12 +86,15 @@ export class PulseWeapon extends Weapon {
       const r = player.getLightRadius();
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
+      const fade = this.novaRingTimer / 1.6;
       ctx.strokeStyle = '#f59e0b';
-      ctx.shadowColor = '#f59e0b';
-      ctx.shadowBlur = 18;
-      ctx.lineWidth = 4 * (this.novaRingTimer / 1.6);
       ctx.beginPath();
       ctx.arc(player.x - cameraX, player.y - cameraY, r, 0, Math.PI * 2);
+      ctx.globalAlpha = 0.3 * fade;
+      ctx.lineWidth = 14 * fade;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = 4 * fade;
       ctx.stroke();
       ctx.restore();
     }
@@ -111,8 +116,8 @@ export class LanceWeapon extends Weapon {
       1.45,
       46,
       '↗',
-      'Fires a piercing beam at the nearest foe inside your light (+15% dmg per pierce).',
-      'Piercing beam refracts into 3 splitting laser streams up to your light edge.'
+      'Durchbohrender Strahl auf den nächsten Feind im Licht (+15% Schaden pro durchbohrtem Feind).',
+      'Der Strahl bricht sich in 3 Laserbahnen bis zum Rand deines Lichts.'
     );
   }
 
@@ -182,13 +187,15 @@ export class LanceWeapon extends Weapon {
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
       ctx.strokeStyle = '#fbbf24';
-      ctx.shadowColor = '#fbbf24';
-      ctx.shadowBlur = 16;
-      ctx.lineWidth = this.isEvolved ? 5.5 : 3.8;
-      ctx.globalAlpha = alpha;
+      ctx.lineCap = 'round';
       ctx.beginPath();
       ctx.moveTo(b.x1 - cameraX, b.y1 - cameraY);
       ctx.lineTo(b.x2 - cameraX, b.y2 - cameraY);
+      ctx.globalAlpha = alpha * 0.3;
+      ctx.lineWidth = this.isEvolved ? 16 : 11;
+      ctx.stroke();
+      ctx.globalAlpha = alpha;
+      ctx.lineWidth = this.isEvolved ? 5.5 : 3.8;
       ctx.stroke();
 
       // White inner core
@@ -221,8 +228,8 @@ export class SparksWeapon extends Weapon {
       1.25,
       21,
       '✦',
-      'Homing motes of light fly beyond your light to seek out enemies.',
-      'Swarm motes chain-bounce between enemies and trigger explosions.'
+      'Zielsuchende Lichtsterne fliegen auch über dein Licht hinaus und jagen Feinde.',
+      'Die Sterne springen zwischen Feinden hin und her und explodieren.'
     );
   }
 
@@ -257,7 +264,7 @@ export class SparksWeapon extends Weapon {
             y: player.y + Math.sin(launchAngle) * 14,
             vx: Math.cos(launchAngle) * initialSpeed,
             vy: Math.sin(launchAngle) * initialSpeed,
-            radius: this.isEvolved ? 6 : 4,
+            radius: this.isEvolved ? 6.5 : 5,
             damage: dmg,
             color: '#34d399',
             life: 0,
@@ -267,7 +274,9 @@ export class SparksWeapon extends Weapon {
             homingSpeed: 390,
             onHitExplode: this.isEvolved,
             boundToLightRadius: false, // Sparks are NOT bound to the dashed line!
-            chainBouncesLeft: this.isEvolved ? 2 : 1
+            chainBouncesLeft: this.isEvolved ? 2 : 1,
+            shape: 'star',
+            spin: Math.random() * Math.PI
           });
         }
       }
@@ -292,8 +301,8 @@ export class OrbitersWeapon extends Weapon {
       0.0,
       16,
       '🪐',
-      'Luminous orbs circle inside your light, blocking enemy shots and firing at foes.',
-      'Blazing corona destroys enemy projectiles and fires rapid homing bolts.'
+      'Leuchtende Kugeln kreisen in deinem Licht, blocken Geschosse und feuern auf Feinde.',
+      'Lodernde Korona: mehr Kugeln, schnelleres Feuer, zielsuchende Blitze.'
     );
   }
 
@@ -325,20 +334,23 @@ export class OrbitersWeapon extends Weapon {
       shiftY = Math.sin(a) * Math.min(18, lightRadius * 0.1);
     }
 
-    this.currentOrbPositions = [];
+    this.currentOrbPositions.length = Math.min(this.currentOrbPositions.length, orbCount);
     for (let i = 0; i < orbCount; i++) {
       const a = this.angle + (i / orbCount) * Math.PI * 2;
       const ox = player.x + shiftX + Math.cos(a) * orbDist;
       const oy = player.y + shiftY + Math.sin(a) * orbDist;
-      this.currentOrbPositions.push({ x: ox, y: oy });
+      const pos = this.currentOrbPositions[i] ?? { x: 0, y: 0 };
+      pos.x = ox;
+      pos.y = oy;
+      this.currentOrbPositions[i] = pos;
 
       for (const enemy of enemies) {
         if (Math.hypot(enemy.x - ox, enemy.y - oy) < enemy.radius + 14) {
-          enemy.takeDamage(dmg, particles, { x: ox, y: oy });
+          enemy.takeDamage(dmg, particles, { x: ox, y: oy }, false, true);
         }
       }
       if (boss && Math.hypot(boss.x - ox, boss.y - oy) < boss.radius + 14) {
-        boss.takeDamage(dmg, particles);
+        boss.takeDamage(dmg, particles, false, true);
       }
     }
 
@@ -382,8 +394,8 @@ export class FlareWeapon extends Weapon {
       2.4,
       52,
       '💥',
-      'Hurls explosive shells at the nearest foe in your light, leaving a burning solar field.',
-      'Detonations create massive solar fields that slow and incinerate all enemies.'
+      'Wirft explosive Granaten, die ein brennendes Sonnenfeld hinterlassen.',
+      'Riesige Sonnenfelder verlangsamen und verbrennen alle Feinde darin.'
     );
   }
 
@@ -425,7 +437,8 @@ export class FlareWeapon extends Weapon {
         homingSpeed: 290,
         onHitExplode: true,
         boundToLightRadius: true,
-        spawnsSolarZone: true
+        spawnsSolarZone: true,
+        shape: 'shell'
       });
     }
   }
@@ -449,8 +462,8 @@ export class RadianceWeapon extends Weapon {
       0.0,
       25,
       '🔆',
-      'A continuous beam to the edge of your light locks onto the nearest foe (+100% heat ramp).',
-      'Opposing dual death beams lock and superheat enemies within your light.'
+      'Dauerstrahl bis zum Lichtrand, der sich festbeißt (bis +100% Hitze-Schaden).',
+      'Zwei gegenläufige Strahlen überhitzen alle Feinde in deinem Licht.'
     );
   }
 
@@ -498,14 +511,14 @@ export class RadianceWeapon extends Weapon {
         if (distFromPlayer <= len + enemy.radius) {
           const d = this.distToSegment(enemy.x, enemy.y, player.x, player.y, bx, by);
           if (d < enemy.radius + 12 + this.thermalCharge * 6) {
-            enemy.takeDamage(dmg, particles, { x: player.x, y: player.y }, this.thermalCharge > 0.75);
+            enemy.takeDamage(dmg, particles, { x: player.x, y: player.y }, this.thermalCharge > 0.75, true);
           }
         }
       }
       if (boss && Math.hypot(boss.x - player.x, boss.y - player.y) <= len + boss.radius) {
         const d = this.distToSegment(boss.x, boss.y, player.x, player.y, bx, by);
         if (d < boss.radius + 12 + this.thermalCharge * 6) {
-          boss.takeDamage(dmg, particles, this.thermalCharge > 0.75);
+          boss.takeDamage(dmg, particles, this.thermalCharge > 0.75, true);
         }
       }
     }
@@ -539,8 +552,8 @@ export class NeedlesWeapon extends Weapon {
       0.34,
       15,
       '⇶',
-      'Rapidly shoots needles at the nearest foe in your light (every 4th shot is a shield-piercing crit).',
-      'Gatling needle bursts with high piercing and golden stagger needles.'
+      'Schnelles Nadelfeuer (jeder 4. Schuss ist ein schilddurchdringender Krit).',
+      'Gatling-Salven mit hoher Durchschlagskraft und goldenen Wucht-Nadeln.'
     );
   }
 
@@ -590,7 +603,8 @@ export class NeedlesWeapon extends Weapon {
           homingSpeed: 520,
           boundToLightRadius: true,
           bypassesShield: isFourthCrit,
-          staggerStrength: isFourthCrit ? 95 : 0
+          staggerStrength: isFourthCrit ? 220 : 0,
+          shape: 'needle'
         });
       }
     }
@@ -620,8 +634,8 @@ export class BeaconWeapon extends Weapon {
       3.0,
       28,
       '🏛️',
-      'Deploys light pillars inside your light that interlink with laser tripwires and fire at foes.',
-      'Up to 6 beacons form a lethal constellation laser grid inside your light.'
+      'Setzt Lichtsäulen, die sich mit Laserfäden verbinden und auf Feinde feuern.',
+      'Bis zu 6 Säulen bilden ein tödliches Laser-Sternbild.'
     );
   }
 
@@ -684,11 +698,11 @@ export class BeaconWeapon extends Weapon {
     for (const b of this.beacons) {
       for (const enemy of enemies) {
         if (Math.hypot(enemy.x - b.x, enemy.y - b.y) < enemy.radius + 35) {
-          enemy.takeDamage(dmg, particles, { x: b.x, y: b.y });
+          enemy.takeDamage(dmg, particles, { x: b.x, y: b.y }, false, true);
         }
       }
       if (boss && Math.hypot(boss.x - b.x, boss.y - b.y) < boss.radius + 35) {
-        boss.takeDamage(dmg, particles);
+        boss.takeDamage(dmg, particles, false, true);
       }
 
       // Beacon turret fires at nearest enemy inside the player's light radius!
@@ -727,11 +741,11 @@ export class BeaconWeapon extends Weapon {
           const b2 = this.beacons[j];
           for (const enemy of enemies) {
             if (this.distToSegment(enemy.x, enemy.y, b1.x, b1.y, b2.x, b2.y) < enemy.radius + 12) {
-              enemy.takeDamage(dmg * linkMult, particles);
+              enemy.takeDamage(dmg * linkMult, particles, undefined, false, true);
             }
           }
           if (boss && this.distToSegment(boss.x, boss.y, b1.x, b1.y, b2.x, b2.y) < boss.radius + 12) {
-            boss.takeDamage(dmg * linkMult, particles);
+            boss.takeDamage(dmg * linkMult, particles, false, true);
           }
         }
       }

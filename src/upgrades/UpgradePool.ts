@@ -68,7 +68,7 @@ export const PASSIVE_UPGRADES: Record<string, PassiveUpgradeDef> = {
     icon: SVG_ICONS.deepReserve,
     themeColor: 'cyan',
     maxLevel: 5,
-    description: () => '+18 max light, refilled now.',
+    description: () => '+18 Max-Licht, sofort aufgefüllt.',
     apply: (player) => {
       player.maxLight += 18;
       player.light = player.maxLight;
@@ -80,7 +80,7 @@ export const PASSIVE_UPGRADES: Record<string, PassiveUpgradeDef> = {
     icon: SVG_ICONS.blink,
     themeColor: 'cyan',
     maxLevel: 3,
-    description: () => 'Dash recharges 22% faster and goes further.',
+    description: () => 'Dash lädt 22% schneller auf.',
     apply: () => {}
   },
   fortune: {
@@ -89,7 +89,7 @@ export const PASSIVE_UPGRADES: Record<string, PassiveUpgradeDef> = {
     icon: SVG_ICONS.fortune,
     themeColor: 'amber',
     maxLevel: 4,
-    description: () => 'Better upgrade offers and +12% score.',
+    description: () => 'Evolutionen & Waffen-Upgrades werden öfter angeboten, +12% Score.',
     apply: (player) => {
       player.scoreMultiplier += 0.12;
     }
@@ -100,7 +100,7 @@ export const PASSIVE_UPGRADES: Record<string, PassiveUpgradeDef> = {
     icon: SVG_ICONS.radiantIntensity,
     themeColor: 'gold',
     maxLevel: 5,
-    description: () => '+15% damage to all weapons.',
+    description: () => '+15% Schaden für alle Waffen.',
     apply: () => {}
   },
   swiftSteps: {
@@ -109,7 +109,7 @@ export const PASSIVE_UPGRADES: Record<string, PassiveUpgradeDef> = {
     icon: SVG_ICONS.swiftSteps,
     themeColor: 'cyan',
     maxLevel: 4,
-    description: () => '+15% movement speed.',
+    description: () => '+15% Bewegungstempo.',
     apply: () => {}
   },
   lightHarvester: {
@@ -118,7 +118,7 @@ export const PASSIVE_UPGRADES: Record<string, PassiveUpgradeDef> = {
     icon: SVG_ICONS.lightHarvester,
     themeColor: 'amber',
     maxLevel: 4,
-    description: () => 'Enemies drop 30% more light on defeat.',
+    description: () => 'Besiegte Feinde lassen 30% mehr Licht fallen.',
     apply: () => {}
   },
   shardMagnet: {
@@ -127,7 +127,7 @@ export const PASSIVE_UPGRADES: Record<string, PassiveUpgradeDef> = {
     icon: SVG_ICONS.shardMagnet,
     themeColor: 'cyan',
     maxLevel: 4,
-    description: () => 'Pulls shards and light from 60% greater distance.',
+    description: () => 'Zieht Splitter und Licht aus 60% größerer Entfernung an.',
     apply: () => {}
   },
   overcharge: {
@@ -136,7 +136,7 @@ export const PASSIVE_UPGRADES: Record<string, PassiveUpgradeDef> = {
     icon: SVG_ICONS.overcharge,
     themeColor: 'gold',
     maxLevel: 4,
-    description: () => '+12% critical hit chance with lightning sparks.',
+    description: () => '+12% kritische Trefferchance.',
     apply: () => {}
   },
   phosphorCoat: {
@@ -145,7 +145,7 @@ export const PASSIVE_UPGRADES: Record<string, PassiveUpgradeDef> = {
     icon: SVG_ICONS.phosphorCoat,
     themeColor: 'magenta',
     maxLevel: 4,
-    description: () => 'Enemies inside your light suffer continuous burn damage.',
+    description: () => 'Feinde in deinem Licht erleiden dauerhaft Brandschaden.',
     apply: () => {}
   },
   resonance: {
@@ -154,7 +154,7 @@ export const PASSIVE_UPGRADES: Record<string, PassiveUpgradeDef> = {
     icon: SVG_ICONS.resonance,
     themeColor: 'cyan',
     maxLevel: 4,
-    description: () => 'All weapons attack 12% faster.',
+    description: () => 'Alle Waffen feuern 12% schneller.',
     apply: () => {}
   },
   prismaticLens: {
@@ -163,7 +163,7 @@ export const PASSIVE_UPGRADES: Record<string, PassiveUpgradeDef> = {
     icon: SVG_ICONS.prismaticLens,
     themeColor: 'gold',
     maxLevel: 5,
-    description: () => '+25% light perimeter radius and weapon reach.',
+    description: () => '+25% Lichtradius und Waffenreichweite.',
     apply: () => {}
   },
   astralBeacon: {
@@ -172,7 +172,7 @@ export const PASSIVE_UPGRADES: Record<string, PassiveUpgradeDef> = {
     icon: SVG_ICONS.innerCore,
     themeColor: 'cyan',
     maxLevel: 4,
-    description: () => '+18% light perimeter size and +12 max light.',
+    description: () => '+18% Lichtradius und +12 Max-Licht.',
     apply: (player) => {
       player.maxLight += 12;
       player.light = Math.min(player.maxLight, player.light + 12);
@@ -184,7 +184,7 @@ export const PASSIVE_UPGRADES: Record<string, PassiveUpgradeDef> = {
     icon: SVG_ICONS.phosphorCoat,
     themeColor: 'magenta',
     maxLevel: 2,
-    description: () => 'ECLIPSE PACT: +45% all weapon damage, but +20% faster light drain.',
+    description: () => 'PAKT: +45% Waffenschaden, aber 20% schnellerer Lichtverlust.',
     apply: () => {}
   },
   voidGlass: {
@@ -193,7 +193,7 @@ export const PASSIVE_UPGRADES: Record<string, PassiveUpgradeDef> = {
     icon: SVG_ICONS.overcharge,
     themeColor: 'magenta',
     maxLevel: 2,
-    description: () => 'ECLIPSE PACT: +35% weapon damage & +15% speed, but -18 max light.',
+    description: () => 'PAKT: +35% Waffenschaden, aber -18 Max-Licht.',
     apply: (player) => {
       player.maxLight = Math.max(55, player.maxLight - 18);
       player.light = Math.min(player.light, player.maxLight);
@@ -205,7 +205,7 @@ export const PASSIVE_UPGRADES: Record<string, PassiveUpgradeDef> = {
     icon: SVG_ICONS.prismShield,
     themeColor: 'cyan',
     maxLevel: 1,
-    description: () => 'Absorbs one fatal hit every 20s and creates a shockwave.',
+    description: () => 'Fängt alle 20s einen Treffer komplett ab und erzeugt eine Schockwelle.',
     apply: (player) => {
       player.shieldActive = true;
     }
@@ -216,7 +216,7 @@ export const PASSIVE_UPGRADES: Record<string, PassiveUpgradeDef> = {
     icon: SVG_ICONS.innerCore,
     themeColor: 'amber',
     maxLevel: 3,
-    description: () => 'Reduces natural light drain by 20%.',
+    description: () => 'Verringert den natürlichen Lichtverlust um 18%.',
     apply: () => {}
   },
   // Additional General Upgrades
@@ -226,7 +226,7 @@ export const PASSIVE_UPGRADES: Record<string, PassiveUpgradeDef> = {
     icon: SVG_ICONS.flare,
     themeColor: 'gold',
     maxLevel: 4,
-    description: () => '+22% weapon damage and +10 max light.',
+    description: () => '+22% Waffenschaden und +10 Max-Licht.',
     apply: (player) => {
       player.maxLight += 10;
       player.light = Math.min(player.maxLight, player.light + 10);
@@ -238,10 +238,8 @@ export const PASSIVE_UPGRADES: Record<string, PassiveUpgradeDef> = {
     icon: SVG_ICONS.resonance,
     themeColor: 'cyan',
     maxLevel: 3,
-    description: () => '+15% attack speed and reduces Supernova cooldown by 30s now.',
-    apply: (player) => {
-      player.supernovaCooldown = Math.max(0, player.supernovaCooldown - 30);
-    }
+    description: () => '+15% Angriffstempo, die Supernova lädt 25% schneller.',
+    apply: () => {}
   },
   voidExecutioner: {
     id: 'voidExecutioner',
@@ -249,7 +247,7 @@ export const PASSIVE_UPGRADES: Record<string, PassiveUpgradeDef> = {
     icon: SVG_ICONS.lance,
     themeColor: 'magenta',
     maxLevel: 3,
-    description: () => '+20% damage to all foes and +25% bonus score multiplier.',
+    description: () => '+20% Schaden und +25% Score-Multiplikator.',
     apply: (player) => {
       player.scoreMultiplier += 0.25;
     }
@@ -260,7 +258,7 @@ export const PASSIVE_UPGRADES: Record<string, PassiveUpgradeDef> = {
     icon: SVG_ICONS.evo,
     themeColor: 'gold',
     maxLevel: 3,
-    description: () => 'Supernova deals +45% blast damage and grants +2.5s longer Overdrive.',
+    description: () => 'Supernova: +45% Schaden, längerer Schutz und +2,5s Overdrive.',
     apply: () => {}
   },
   phantomStep: {
@@ -269,7 +267,7 @@ export const PASSIVE_UPGRADES: Record<string, PassiveUpgradeDef> = {
     icon: SVG_ICONS.blink,
     themeColor: 'green',
     maxLevel: 3,
-    description: () => '+14% movement speed and Dash shockwave radius increased.',
+    description: () => '+14% Tempo und größere Dash-Schockwelle.',
     apply: () => {}
   },
   // Class-Specific In-Run Mastery Upgrades
@@ -280,7 +278,7 @@ export const PASSIVE_UPGRADES: Record<string, PassiveUpgradeDef> = {
     themeColor: 'cyan',
     maxLevel: 3,
     requiredClass: 'wanderer',
-    description: () => '[Aether-Wanderer] +18% light radius, +16% weapon damage & +15 Light.',
+    description: () => '[Aether-Wanderer] +18% Lichtradius, +16% Waffenschaden & +15 Licht.',
     apply: (player) => {
       player.addLight(15);
     }
@@ -292,7 +290,7 @@ export const PASSIVE_UPGRADES: Record<string, PassiveUpgradeDef> = {
     themeColor: 'amber',
     maxLevel: 3,
     requiredClass: 'vanguard',
-    description: () => '[Solar-Vanguard] +25 Max Light, -14% light drain & +20% weapon damage.',
+    description: () => '[Solar-Vanguard] +25 Max-Licht, -14% Lichtverlust & +20% Waffenschaden.',
     apply: (player) => {
       player.maxLight += 25;
       player.addLight(25);
@@ -305,7 +303,7 @@ export const PASSIVE_UPGRADES: Record<string, PassiveUpgradeDef> = {
     themeColor: 'magenta',
     maxLevel: 3,
     requiredClass: 'hunter',
-    description: () => '[Void-Jäger] +25% weapon damage, +12% crit chance & +25% crit damage.',
+    description: () => '[Void-Jäger] +25% Waffenschaden, +12% Krit-Chance & +25% Krit-Schaden.',
     apply: () => {}
   },
   architectGrid: {
@@ -315,7 +313,7 @@ export const PASSIVE_UPGRADES: Record<string, PassiveUpgradeDef> = {
     themeColor: 'gold',
     maxLevel: 3,
     requiredClass: 'architect',
-    description: () => '[Sternen-Architekt] +22% light perimeter reach & Obelisks charge 30% faster.',
+    description: () => '[Sternen-Architekt] +22% Lichtradius & Obelisken laden 30% schneller.',
     apply: (player) => {
       player.maxLight += 15;
       player.addLight(15);
@@ -332,6 +330,55 @@ export const ALL_WEAPON_CLASSES = [
   RadianceWeapon,
   NeedlesWeapon,
   BeaconWeapon
+];
+
+/** Creates a fresh weapon instance by id (e.g. 'pulse'). */
+export function createWeapon(weaponId: string): Weapon | null {
+  for (const WeaponClass of ALL_WEAPON_CLASSES) {
+    const w = new WeaponClass();
+    if (w.id === weaponId) return w;
+  }
+  return null;
+}
+
+/** Repeatable gifts offered once every weapon and passive is maxed. */
+const BONUS_GIFTS: GiftCardOption[] = [
+  {
+    id: 'bonus_power',
+    type: 'upgrade',
+    tag: 'UPGRADE',
+    title: 'STERNENKRAFT',
+    description: '+5% Schaden für alle Waffen (beliebig stapelbar).',
+    icon: SVG_ICONS.radiantIntensity,
+    themeColor: 'magenta',
+    currentLevel: 0,
+    nextLevel: 1,
+    maxLevel: 99
+  },
+  {
+    id: 'bonus_light',
+    type: 'upgrade',
+    tag: 'UPGRADE',
+    title: 'LICHTQUELLE',
+    description: '+40 Licht sofort und +5 Max-Licht.',
+    icon: SVG_ICONS.deepReserve,
+    themeColor: 'cyan',
+    currentLevel: 0,
+    nextLevel: 1,
+    maxLevel: 99
+  },
+  {
+    id: 'bonus_shards',
+    type: 'upgrade',
+    tag: 'UPGRADE',
+    title: 'SPLITTERREGEN',
+    description: '+10 Splitter für die Schmiede.',
+    icon: SVG_ICONS.fortune,
+    themeColor: 'gold',
+    currentLevel: 0,
+    nextLevel: 1,
+    maxLevel: 99
+  }
 ];
 
 export function generateGiftChoices(player: Player, activeWeapons: Weapon[]): GiftCardOption[] {
@@ -417,13 +464,37 @@ export function generateGiftChoices(player: Player, activeWeapons: Weapon[]): Gi
     }
   }
 
-  // Shuffle and pick 3 unique cards
-  for (let i = choices.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [choices[i], choices[j]] = [choices[j], choices[i]];
+  // Endless fallback gifts so a fully maxed build never gets an empty level-up
+  if (choices.length < 3) {
+    for (const bonus of BONUS_GIFTS) {
+      if (choices.length >= 3) break;
+      choices.push({ ...bonus });
+    }
   }
 
-  return choices.slice(0, 3);
+  // Weighted pick of 3 unique cards: evolutions and upgrades of owned weapons show up
+  // more often so builds come together, while new passives still rotate in.
+  const fortuneLvl = player.passives.get('fortune') ?? 0;
+  const weightOf = (c: GiftCardOption): number => {
+    if (c.isEvolution) return 4 + fortuneLvl;
+    if (c.tag === 'WEAPON') return 1.6 + fortuneLvl * 0.2;
+    if (c.tag === 'NEW WEAPON') return activeWeapons.length < 2 ? 1.5 : 0.9;
+    if (c.tag === 'ECLIPSE PACT') return 0.6;
+    return 1;
+  };
+  const picked: GiftCardOption[] = [];
+  const pool = [...choices];
+  while (picked.length < 3 && pool.length > 0) {
+    const total = pool.reduce((sum, c) => sum + weightOf(c), 0);
+    let roll = Math.random() * total;
+    let idx = 0;
+    for (; idx < pool.length - 1; idx++) {
+      roll -= weightOf(pool[idx]);
+      if (roll <= 0) break;
+    }
+    picked.push(pool.splice(idx, 1)[0]);
+  }
+  return picked;
 }
 
 export function applyGiftChoice(
@@ -434,9 +505,9 @@ export function applyGiftChoice(
   if (choice.type === 'weapon') {
     if (choice.id.startsWith('new_weapon_')) {
       const weaponId = choice.id.replace('new_weapon_', '');
-      const FoundClass = ALL_WEAPON_CLASSES.find((c) => new c().id === weaponId);
-      if (FoundClass) {
-        activeWeapons.push(new FoundClass());
+      const created = createWeapon(weaponId);
+      if (created) {
+        activeWeapons.push(created);
       }
     } else {
       const weaponId = choice.id.replace('weapon_', '').replace('_evo', '');
@@ -445,6 +516,12 @@ export function applyGiftChoice(
         existing.upgrade();
       }
     }
+  } else if (choice.id.startsWith('bonus_')) {
+    if (choice.id === 'bonus_power') player.bonusDamage += 0.05;
+    else if (choice.id === 'bonus_light') {
+      player.maxLight += 5;
+      player.addLight(40);
+    } else if (choice.id === 'bonus_shards') player.shardsCollectedThisRun += 10;
   } else {
     const passiveId = choice.id.replace('passive_', '');
     const def = PASSIVE_UPGRADES[passiveId];

@@ -1,3 +1,4 @@
+import './fonts';
 import './style.css';
 import { Game } from './engine/Game';
 
@@ -8,7 +9,6 @@ window.addEventListener('DOMContentLoaded', () => {
     return;
   }
 
-  // Initialize LUMEN game
   const game = new Game(canvas);
-  (window as unknown as { __LUMEN_GAME__: Game }).__LUMEN_GAME__ = game;
+  (window as unknown as { __AETHER_GAME__: Game }).__AETHER_GAME__ = game;
 });

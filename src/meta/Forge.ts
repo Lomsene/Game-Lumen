@@ -1,5 +1,5 @@
 /**
- * The Forge (Die Schmiede) - Meta-progression system for LUMEN.
+ * The Forge (Die Schmiede) - Meta-progression system for AETHER: ECLIPSE.
  * Handles persistent Shards currency, permanent upgrades, and Highscores via LocalStorage.
  */
 
@@ -156,7 +156,7 @@ export const FORGE_UPGRADES: Record<string, ForgeUpgradeDef> = {
   eternalFlame: {
     id: 'eternalFlame',
     name: 'Ewige Flamme',
-    description: 'Beginne jeden Durchlauf mit zusätzlichem Licht (+12 pro Stufe).',
+    description: 'Beginne jeden Durchlauf mit mehr Max-Licht (+15 pro Stufe).',
     baseCost: 20,
     costMultiplier: 1.8,
     maxLevel: 5,
@@ -166,7 +166,7 @@ export const FORGE_UPGRADES: Record<string, ForgeUpgradeDef> = {
   radiantEndurance: {
     id: 'radiantEndurance',
     name: 'Dunkelheitsresistenz',
-    description: 'Verringert den natürlichen Lichtzerfall um 5% pro Stufe.',
+    description: 'Verringert den natürlichen Lichtzerfall um 6% pro Stufe.',
     baseCost: 25,
     costMultiplier: 2.0,
     maxLevel: 5,
@@ -176,7 +176,7 @@ export const FORGE_UPGRADES: Record<string, ForgeUpgradeDef> = {
   quickstep: {
     id: 'quickstep',
     name: 'Reflex-Matrix',
-    description: 'Sprint lädt 6% schneller auf und gewährt längere Unverwundbarkeit.',
+    description: 'Dash lädt 6% schneller auf und gewährt +0,04s längere Unverwundbarkeit pro Stufe.',
     baseCost: 30,
     costMultiplier: 2.0,
     maxLevel: 5,
@@ -206,7 +206,7 @@ export const FORGE_UPGRADES: Record<string, ForgeUpgradeDef> = {
   soulLuminance: {
     id: 'soulLuminance',
     name: 'Seelenstärke',
-    description: 'Erhöht den Basisschaden aller Waffen dauerhaft um 6% pro Stufe.',
+    description: 'Erhöht den Basisschaden aller Waffen dauerhaft um 8% pro Stufe.',
     baseCost: 35,
     costMultiplier: 2.2,
     maxLevel: 5,
@@ -216,7 +216,7 @@ export const FORGE_UPGRADES: Record<string, ForgeUpgradeDef> = {
   supernovaCatalyst: {
     id: 'supernovaCatalyst',
     name: 'Supernova-Fokus',
-    description: 'Erhöht den Schaden der Supernova-Opferung um +25% und gewährt +1,5s längeren Overdrive.',
+    description: 'Supernova: +25% Schaden, +1,5s Overdrive und lädt 8% schneller pro Stufe.',
     baseCost: 45,
     costMultiplier: 2.1,
     maxLevel: 4,
@@ -226,11 +226,52 @@ export const FORGE_UPGRADES: Record<string, ForgeUpgradeDef> = {
   shardGreed: {
     id: 'shardGreed',
     name: 'Splitter-Alchemie',
-    description: 'Erhöht die Chance auf Splitter-Drops von besiegten Feinden um +8% pro Stufe.',
+    description: 'Besiegte Feinde lassen 15% öfter Splitter fallen (pro Stufe).',
     baseCost: 30,
     costMultiplier: 1.9,
     maxLevel: 5,
     icon: '💎',
+    category: 'general'
+  },
+  // Start-focused upgrades: make the first minutes noticeably easier
+  headStart: {
+    id: 'headStart',
+    name: 'Vorbereitung',
+    description: 'Deine Startwaffe beginnt pro Stufe eine Stufe höher.',
+    baseCost: 45,
+    costMultiplier: 2.6,
+    maxLevel: 2,
+    icon: '🗡️',
+    category: 'general'
+  },
+  dawnWard: {
+    id: 'dawnWard',
+    name: 'Morgenschild',
+    description: 'Starte mit einer Schildladung pro Stufe, die einen Treffer komplett abfängt.',
+    baseCost: 30,
+    costMultiplier: 2.2,
+    maxLevel: 3,
+    icon: '🔰',
+    category: 'general'
+  },
+  seasonedSoul: {
+    id: 'seasonedSoul',
+    name: 'Erfahrene Seele',
+    description: '+12% Erfahrung aus allen Quellen pro Stufe – schnellere erste Level.',
+    baseCost: 25,
+    costMultiplier: 2.0,
+    maxLevel: 4,
+    icon: '📈',
+    category: 'general'
+  },
+  firstGift: {
+    id: 'firstGift',
+    name: 'Startgabe',
+    description: 'Wähle zu Beginn jedes Durchlaufs eine kostenlose Gabe (pro Stufe eine).',
+    baseCost: 60,
+    costMultiplier: 3.0,
+    maxLevel: 2,
+    icon: '🎁',
     category: 'general'
   },
   // Class-specific Forge Mastery Upgrades
@@ -289,6 +330,10 @@ export class ForgeManager {
   public unlockedSkins: PlayerSkinId[] = ['cyan'];
   public selectedSkin: PlayerSkinId = 'cyan';
 
+  public bestBossesDefeated: number = 0;
+  public totalRuns: number = 0;
+
+  // Kept for compatibility with existing save games
   private readonly STORAGE_KEY = 'lumen_save_v1';
 
   constructor() {
@@ -313,6 +358,8 @@ export class ForgeManager {
           ? parsed.unlockedSkins
           : ['cyan'];
         this.selectedSkin = parsed.selectedSkin ?? 'cyan';
+        this.bestBossesDefeated = parsed.bestBossesDefeated ?? 0;
+        this.totalRuns = parsed.totalRuns ?? 0;
       }
     } catch (e) {
       console.warn('Failed to load save from localStorage', e);
@@ -330,7 +377,9 @@ export class ForgeManager {
         unlockedClasses: this.unlockedClasses,
         selectedClass: this.selectedClass,
         unlockedSkins: this.unlockedSkins,
-        selectedSkin: this.selectedSkin
+        selectedSkin: this.selectedSkin,
+        bestBossesDefeated: this.bestBossesDefeated,
+        totalRuns: this.totalRuns
       };
       localStorage.setItem(this.STORAGE_KEY, JSON.stringify(data));
     } catch (e) {
@@ -382,7 +431,11 @@ export class ForgeManager {
     this.save();
   }
 
-  public recordRun(survivalSeconds: number, score: number) {
+  public recordRun(survivalSeconds: number, score: number, bossesDefeated: number = 0) {
+    this.totalRuns += 1;
+    if (bossesDefeated > this.bestBossesDefeated) {
+      this.bestBossesDefeated = bossesDefeated;
+    }
     if (survivalSeconds > this.bestSurvivalTime) {
       this.bestSurvivalTime = survivalSeconds;
     }

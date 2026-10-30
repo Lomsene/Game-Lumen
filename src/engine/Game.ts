@@ -1,19 +1,28 @@
 import { Player } from '../entities/Player';
 import { Enemy, EnemyProjectile, EnemyType, MortarZone, VoidObelisk, ShadowRift, SolarBurnZone } from '../entities/Enemy';
-import { Boss } from '../entities/Boss';
+import { Boss, BossSpawnRequests } from '../entities/Boss';
 import { Drop } from '../entities/Drop';
 import { Weapon, PlayerProjectile } from '../weapons/Weapon';
-import { PulseWeapon, OrbitersWeapon, NeedlesWeapon, BeaconWeapon } from '../weapons/WeaponRegistry';
+import { OrbitersWeapon } from '../weapons/WeaponRegistry';
+import { createWeapon } from '../upgrades/UpgradePool';
 import { ParticleSystem } from './Particle';
 import { GameRenderer } from './Renderer';
 import { InputManager } from './Input';
+import { SpatialGrid } from './SpatialGrid';
+import { Balance } from './Balance';
 import { HUD } from '../ui/HUD';
 import { GiftModal } from '../ui/GiftModal';
 import { ForgeModal } from '../ui/ForgeModal';
+import { MenuUI } from '../ui/MenuUI';
 import { forge, PLAYER_CLASSES, PLAYER_SKINS } from '../meta/Forge';
+import { settings, haptic } from '../meta/Settings';
 import { sound } from './Sound';
 
 export type GameState = 'menu' | 'playing' | 'paused' | 'levelup' | 'gameover';
+
+/** Fixed simulation step: identical game speed on 60/90/120/144 Hz displays. */
+const STEP = 1 / 60;
+const MAX_STEPS_PER_FRAME = 5;
 
 export class Game {
   public canvas: HTMLCanvasElement;
@@ -23,6 +32,7 @@ export class Game {
   public hud: HUD;
   public giftModal: GiftModal;
   public forgeModal: ForgeModal;
+  public menus: MenuUI;
 
   public state: GameState = 'menu';
   public survivalTime: number = 0; // seconds
@@ -40,31 +50,53 @@ export class Game {
   public shadowRifts: ShadowRift[] = [];
   public solarZones: SolarBurnZone[] = [];
 
-  // Spawning & Events
+  private enemyGrid = new SpatialGrid<Enemy>(64);
+  private bossSpawns: BossSpawnRequests = { minions: [], rifts: [] };
+
+  // Spawning & events
   private enemySpawnTimer: number = 0;
   private obeliskSpawnTimer: number = 0;
   private swarmEventTimer: number = 0;
   private riftSpawnTimer: number = 0;
   private lastTime: number = 0;
-  private boss1Spawned: boolean = false;
-  private boss2Spawned: boolean = false;
-  private boss3Spawned: boolean = false;
+  private accumulator: number = 0;
+  /** Frames rendered since the game stopped simulating (menus/pause only need one). */
+  private staticFrames: number = 0;
+
+  // Endless boss chain
+  private nextBossNumber: number = 1;
+  private bossFreeTimer: number = 0;
+  public bossesDefeated: number = 0;
+
+  // Level-ups are queued so multi-level XP gains are never lost or skipped
+  private pendingLevelUps: number = 0;
+  private pendingStartGifts: number = 0;
+
+  // Tutorial hints (first run only)
+  private tutorialStep: number = 0;
 
   // DOM Screen Overlays
   private hudOverlay: HTMLElement | null;
   private mainMenuOverlay: HTMLElement | null;
   private gameoverOverlay: HTMLElement | null;
   private guideOverlay: HTMLElement | null;
+  private fpsEl: HTMLElement | null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.renderer = new GameRenderer(canvas);
     this.input = new InputManager();
-    this.input.setCanvas(canvas);
     this.particles = new ParticleSystem();
+    this.renderer.attachParticles(this.particles);
+    this.particles.showDamageNumbers = settings.data.damageNumbers;
     this.hud = new HUD();
     this.giftModal = new GiftModal();
     this.forgeModal = new ForgeModal();
+    this.menus = new MenuUI({
+      onResume: () => this.resume(),
+      onQuit: () => this.quitRun(),
+      getBuildInfo: () => ({ player: this.player, weapons: this.weapons, survivalTime: this.survivalTime })
+    });
 
     this.player = new Player();
 
@@ -72,66 +104,54 @@ export class Game {
     this.mainMenuOverlay = document.getElementById('main-menu');
     this.gameoverOverlay = document.getElementById('gameover-modal');
     this.guideOverlay = document.getElementById('guide-modal');
+    this.fpsEl = document.getElementById('fps-counter');
+
+    settings.onChange((s) => {
+      this.particles.showDamageNumbers = s.damageNumbers;
+      sound.applySettings();
+      this.fpsEl?.classList.toggle('hidden', !s.showFps);
+      this.staticFrames = 0; // Quality changes resize (and clear) the canvas - redraw it
+    });
+    this.fpsEl?.classList.toggle('hidden', !settings.data.showFps);
+    sound.applySettings();
 
     this.initEventListeners();
     this.updateMenuStats();
 
-    // Resize listener
     window.addEventListener('resize', () => {
       this.renderer.resize();
+      this.staticFrames = 0;
     });
 
-    // Start Animation Loop
     this.lastTime = performance.now();
     requestAnimationFrame((t) => this.loop(t));
   }
 
   private initEventListeners() {
-    // Menu buttons
-    document.getElementById('btn-start-game')?.addEventListener('click', () => {
-      this.startNewRun();
-    });
-
+    document.getElementById('btn-start-game')?.addEventListener('click', () => this.startNewRun());
     document.getElementById('btn-open-forge')?.addEventListener('click', () => {
       this.forgeModal.show(() => this.updateMenuStats(), 'upgrades');
     });
-
     document.getElementById('btn-open-classes')?.addEventListener('click', () => {
       this.forgeModal.show(() => this.updateMenuStats(), 'classes');
     });
-
     document.getElementById('btn-open-skins')?.addEventListener('click', () => {
       this.forgeModal.show(() => this.updateMenuStats(), 'skins');
     });
-
     document.getElementById('btn-open-guide')?.addEventListener('click', () => {
       this.guideOverlay?.classList.remove('hidden');
     });
-
     document.getElementById('btn-close-guide')?.addEventListener('click', () => {
       this.guideOverlay?.classList.add('hidden');
     });
+    document.getElementById('btn-open-settings')?.addEventListener('click', () => this.menus.showSettings());
 
-    // Sound toggle
-    const soundToggle = document.getElementById('btn-toggle-sound');
-    soundToggle?.addEventListener('click', () => {
-      const isMuted = sound.toggleMute();
-      if (soundToggle) {
-        soundToggle.textContent = isMuted ? '🔇 Audio: Aus' : '🔊 Audio: An';
-      }
-    });
+    document.getElementById('pause-btn')?.addEventListener('click', () => this.pause());
 
-    // Pause button
-    document.getElementById('pause-btn')?.addEventListener('click', () => {
-      this.togglePause();
-    });
-
-    // Game Over buttons
     document.getElementById('btn-gameover-restart')?.addEventListener('click', () => {
       this.gameoverOverlay?.classList.add('hidden');
       this.startNewRun();
     });
-
     document.getElementById('btn-gameover-forge')?.addEventListener('click', () => {
       this.gameoverOverlay?.classList.add('hidden');
       this.hudOverlay?.classList.add('hidden');
@@ -139,42 +159,52 @@ export class Game {
         this.updateMenuStats();
         this.mainMenuOverlay?.classList.remove('hidden');
       });
-    });
-
-    document.getElementById('btn-gameover-menu')?.addEventListener('click', () => {
-      this.gameoverOverlay?.classList.add('hidden');
-      this.hudOverlay?.classList.add('hidden');
-      this.mainMenuOverlay?.classList.remove('hidden');
-      this.updateMenuStats();
       this.state = 'menu';
     });
+    document.getElementById('btn-gameover-menu')?.addEventListener('click', () => this.showMainMenu());
 
-    // Key shortcut for pause (ESC or P) and restart (Space on Gameover)
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Escape' || e.code === 'KeyP') {
-        if (this.state === 'playing' || this.state === 'paused') {
-          this.togglePause();
-        }
-      } else if (e.code === 'Space' && this.state === 'gameover') {
+        if (this.state === 'playing') this.pause();
+        else if (this.state === 'paused') this.resume();
+      } else if (e.code === 'Enter' && this.state === 'gameover') {
         this.gameoverOverlay?.classList.add('hidden');
         this.startNewRun();
       }
+    });
+
+    // Auto-pause when the app/tab goes into the background
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        if (this.state === 'playing') this.pause();
+        sound.suspend();
+      } else {
+        sound.resume();
+      }
+    });
+    window.addEventListener('blur', () => {
+      if (this.state === 'playing') this.pause();
+    });
+
+    // Android hardware back button (dispatched by MainActivity)
+    window.addEventListener('aether-back', () => {
+      if (this.menus.closeTopOverlay()) return;
+      if (this.state === 'playing') this.pause();
+      else if (this.state === 'paused') this.resume();
     });
   }
 
   public updateMenuStats() {
     const shardsEl = document.getElementById('menu-shards');
     const recordEl = document.getElementById('menu-record');
+    const bossRecordEl = document.getElementById('menu-boss-record');
     const classEl = document.getElementById('menu-active-class');
     const skinEl = document.getElementById('menu-active-skin');
     const orbEl = document.querySelector('.lumen-orb-anim') as HTMLElement | null;
 
     if (shardsEl) shardsEl.textContent = `${forge.shards}`;
-    if (recordEl) {
-      const m = Math.floor(forge.bestSurvivalTime / 60);
-      const s = Math.floor(forge.bestSurvivalTime % 60);
-      recordEl.textContent = `${m}:${s < 10 ? '0' : ''}${s}`;
-    }
+    if (recordEl) recordEl.textContent = formatTime(forge.bestSurvivalTime);
+    if (bossRecordEl) bossRecordEl.textContent = `${forge.bestBossesDefeated}`;
     const cDef = PLAYER_CLASSES[forge.selectedClass] ?? PLAYER_CLASSES.wanderer;
     const sDef = PLAYER_SKINS[forge.selectedSkin] ?? PLAYER_SKINS.cyan;
     if (classEl) classEl.textContent = `${cDef.icon} ${cDef.name}`;
@@ -188,7 +218,6 @@ export class Game {
         orbEl.style.boxShadow = `0 0 35px ${sDef.primaryColor}, 0 0 70px rgba(${sDef.trailRgba}, 0.5)`;
       }
     }
-    // Keep live background player skin & class updated in menu!
     if (this.player && this.state === 'menu') {
       this.player.skinId = forge.selectedSkin;
       this.player.classId = forge.selectedClass;
@@ -196,77 +225,111 @@ export class Game {
   }
 
   public startNewRun() {
-    // Reset player
     this.player = new Player();
     this.player.initFromForge();
 
-    // Starting weapon based on selected class!
+    // Starting weapon from class, pre-levelled by the "Vorbereitung" forge upgrade
     const classDef = PLAYER_CLASSES[this.player.classId] ?? PLAYER_CLASSES.wanderer;
-    switch (classDef.startingWeaponId) {
-      case 'orbiters':
-        this.weapons = [new OrbitersWeapon()];
-        break;
-      case 'needles':
-        this.weapons = [new NeedlesWeapon()];
-        break;
-      case 'beacon':
-        this.weapons = [new BeaconWeapon()];
-        break;
-      default:
-        this.weapons = [new PulseWeapon()];
-        break;
-    }
+    const startWeapon = createWeapon(classDef.startingWeaponId) ?? createWeapon('pulse')!;
+    for (let i = 0; i < forge.getLevel('headStart'); i++) startWeapon.upgrade();
+    this.weapons = [startWeapon];
 
-    // Clear state
     this.enemies = [];
     this.boss = null;
     this.drops = [];
     this.playerProjectiles = [];
     this.enemyProjectiles = [];
-    this.particles.clear();
-
-    this.survivalTime = 0;
-    this.enemySpawnTimer = 0;
-    this.obeliskSpawnTimer = 15; // First Obelisk spawns at 20s!
-    this.swarmEventTimer = 0;
-    this.riftSpawnTimer = 0;
-    this.boss1Spawned = false;
-    this.boss2Spawned = false;
-    this.boss3Spawned = false;
     this.mortarZones = [];
     this.obelisks = [];
     this.shadowRifts = [];
     this.solarZones = [];
+    this.particles.clear();
 
-    // UI visibility
+    this.survivalTime = 0;
+    this.enemySpawnTimer = 0;
+    this.obeliskSpawnTimer = 15; // First Obelisk after ~20s
+    this.swarmEventTimer = 0;
+    this.riftSpawnTimer = 0;
+    this.nextBossNumber = 1;
+    this.bossFreeTimer = 0;
+    this.bossesDefeated = 0;
+    this.pendingLevelUps = 0;
+    this.pendingStartGifts = forge.getLevel('firstGift');
+    this.tutorialStep = settings.data.tutorialSeen ? -1 : 0;
+    this.accumulator = 0;
+
+    this.renderer.cameraX = this.player.x - this.renderer.viewWidth / 2;
+    this.renderer.cameraY = this.player.y - this.renderer.viewHeight / 2;
+
     this.mainMenuOverlay?.classList.add('hidden');
     this.gameoverOverlay?.classList.add('hidden');
     this.hudOverlay?.classList.remove('hidden');
+    this.hud.reset();
 
+    this.input.clearActions();
     this.state = 'playing';
     sound.startAmbience();
   }
 
-  public togglePause() {
-    if (this.state === 'playing') {
-      this.state = 'paused';
-    } else if (this.state === 'paused') {
-      this.state = 'playing';
-    }
+  public pause() {
+    if (this.state !== 'playing') return;
+    this.state = 'paused';
+    this.input.clearActions();
+    this.menus.showPause();
+  }
+
+  public resume() {
+    if (this.state !== 'paused') return;
+    this.menus.hidePause();
+    this.input.clearActions();
+    this.state = 'playing';
+    this.lastTime = performance.now();
+  }
+
+  private quitRun() {
+    this.menus.hidePause();
+    this.handleGameOver();
+  }
+
+  private showMainMenu() {
+    this.gameoverOverlay?.classList.add('hidden');
+    this.hudOverlay?.classList.add('hidden');
+    this.mainMenuOverlay?.classList.remove('hidden');
+    this.state = 'menu';
+    this.updateMenuStats();
   }
 
   private loop(timestamp: number) {
-    const rawDt = (timestamp - this.lastTime) / 1000;
+    const frameMs = timestamp - this.lastTime;
     this.lastTime = timestamp;
-    const dt = Math.min(rawDt, 0.1); // Cap delta time to prevent physics glitches
+    const frameDt = Math.min(frameMs / 1000, 0.1);
 
     if (this.state === 'playing') {
-      this.update(dt);
+      this.renderer.reportFrameTime(frameMs);
+      this.staticFrames = 0;
+      this.accumulator += frameDt;
+      let steps = 0;
+      while (this.accumulator >= STEP && steps < MAX_STEPS_PER_FRAME && this.state === 'playing') {
+        this.update(STEP);
+        this.accumulator -= STEP;
+        steps++;
+      }
+      if (steps === MAX_STEPS_PER_FRAME) this.accumulator = 0; // Device too slow - drop the backlog
+      this.hud.update(this.player, this.survivalTime, this.boss, this.weapons, this.getPhaseLabel());
+      this.processLevelUpQueue();
+    } else {
+      this.accumulator = 0;
+      this.staticFrames++;
     }
 
-    // Always render so freeze effects / modals have crisp visuals behind them
+    // While paused / in menus the scene is frozen: render a couple of frames, then idle (saves battery)
+    if (this.staticFrames > 3) {
+      requestAnimationFrame((t) => this.loop(t));
+      return;
+    }
+
     this.renderer.render(
-      dt,
+      frameDt,
       this.player,
       this.enemies,
       this.boss,
@@ -281,124 +344,200 @@ export class Game {
       this.solarZones
     );
 
+    if (this.fpsEl && settings.data.showFps) {
+      this.fpsEl.textContent = `${Math.round(this.renderer.fps)} FPS • ${this.renderer.quality.toUpperCase()} • ${this.enemies.length} E • ${this.particles.particles.length} P`;
+    }
+
     requestAnimationFrame((t) => this.loop(t));
+  }
+
+  private getPhaseLabel(): string {
+    if (this.boss && !this.boss.isDefeated) return this.boss.name;
+    const remaining = Math.max(0, Balance.bossInterval(this.nextBossNumber) - this.bossFreeTimer);
+    return `BOSS ${this.nextBossNumber} IN ${formatTime(remaining)}`;
+  }
+
+  private processLevelUpQueue() {
+    if (this.state !== 'playing') return;
+    if (this.pendingStartGifts > 0) {
+      this.pendingStartGifts -= 1;
+      this.openGiftModal('STARTGABE');
+    } else if (this.pendingLevelUps > 0) {
+      this.pendingLevelUps -= 1;
+      this.openGiftModal(`LEVEL ${this.player.level - this.pendingLevelUps}`);
+    }
+  }
+
+  private openGiftModal(label: string) {
+    this.state = 'levelup';
+    this.input.clearActions();
+    haptic(25);
+    const rerollBonus = forge.getLevel('fortuneReroll');
+    this.giftModal.show(this.player, this.weapons, rerollBonus, label, () => {
+      this.input.clearActions();
+      this.state = 'playing';
+      this.lastTime = performance.now();
+    });
   }
 
   private update(dt: number) {
     this.survivalTime += dt;
+    const minutes = this.survivalTime / 60;
+    const player = this.player;
 
-    // Score over time with total combo multiplier
-    this.player.score += dt * 10 * this.player.getTotalMultiplier();
+    player.score += dt * 10 * player.getTotalMultiplier();
 
-    // Update dynamic soundtrack intensity based on combat pressure
     const bossFactor = this.boss ? 0.45 : 0;
     const swarmFactor = Math.min(0.45, this.enemies.length / 45);
-    const overdriveFactor = this.player.overdriveTimer > 0 ? 0.25 : 0;
+    const overdriveFactor = player.overdriveTimer > 0 ? 0.25 : 0;
     sound.setIntensity(0.22 + bossFactor + swarmFactor + overdriveFactor);
 
-    // 1. Input & Player update
-    const playerScreenPos = {
-      x: this.player.x - this.renderer.cameraX,
-      y: this.player.y - this.renderer.cameraY
-    };
+    this.updateTutorial();
+
+    // 1. Input & player
+    const playerScreenPos = { x: player.x - this.renderer.cameraX, y: player.y - this.renderer.cameraY };
     const moveInput = this.input.getMovementVector(playerScreenPos);
 
-    if (this.input.consumeDash()) {
-      const dashed = this.player.triggerDash();
-      if (dashed) {
-        // Dash shockwave clears nearby enemy projectiles!
-        const phantomBonus = (this.player.passives.get('phantomStep') ?? 0) * 35;
-        const dashWaveRadius = 85 + phantomBonus;
-        this.particles.emitShockwave(this.player.x, this.player.y, dashWaveRadius, '#00f3ff', 3);
-        for (let i = this.enemyProjectiles.length - 1; i >= 0; i--) {
-          const ep = this.enemyProjectiles[i];
-          if (Math.hypot(ep.x - this.player.x, ep.y - this.player.y) < dashWaveRadius + 5) {
-            this.particles.emitSpark(ep.x, ep.y, '#00f3ff', 5);
-            this.enemyProjectiles.splice(i, 1);
-          }
-        }
-      }
+    if (this.input.consumeDash() && player.triggerDash()) {
+      // Dash shockwave clears nearby enemy projectiles
+      const phantomBonus = (player.passives.get('phantomStep') ?? 0) * 35;
+      const dashWaveRadius = 85 + phantomBonus;
+      this.particles.emitShockwave(player.x, player.y, dashWaveRadius, '#00f3ff', 3);
+      const r2 = (dashWaveRadius + 5) ** 2;
+      this.enemyProjectiles = this.enemyProjectiles.filter((ep) => {
+        const hit = (ep.x - player.x) ** 2 + (ep.y - player.y) ** 2 < r2;
+        if (hit) this.particles.emitSpark(ep.x, ep.y, '#00f3ff', 3);
+        return !hit;
+      });
     }
 
-    // Active Ultimate: Supernova / Licht-Opfer (97% Light Sacrifice, 1x per 10 min)
     if (this.input.consumeSupernova()) {
-      const sacrificedLight = this.player.triggerSupernova();
+      const sacrificedLight = player.triggerSupernova();
       if (sacrificedLight > 0) {
-        this.executeSupernovaBlast(sacrificedLight);
-      } else if (this.player.supernovaCooldown > 0) {
-        const remMin = Math.floor(this.player.supernovaCooldown / 60);
-        const remSec = Math.ceil(this.player.supernovaCooldown % 60);
-        this.particles.emitBannerText(
-          this.player.x,
-          this.player.y - 30,
-          `SUPERNOVA COOLDOWN (${remMin}:${remSec < 10 ? '0' : ''}${remSec})`,
-          '#f43f5e'
-        );
+        this.executeSupernovaBlast(sacrificedLight, minutes);
+      } else if (!player.isNovaReady()) {
+        const pct = Math.floor((player.novaCharge / player.getNovaChargeNeeded()) * 100);
+        this.particles.emitBannerText(player.x, player.y - 30, `SUPERNOVA LÄDT… ${pct}%`, '#f43f5e');
       } else {
-        this.particles.emitBannerText(this.player.x, this.player.y - 30, 'ZU WENIG LICHT FÜR SUPERNOVA!', '#f43f5e');
+        this.particles.emitBannerText(player.x, player.y - 30, 'ZU WENIG LICHT FÜR SUPERNOVA!', '#f43f5e');
       }
     }
 
-    const minutes = this.survivalTime / 60;
-    this.player.update(dt, moveInput, this.particles, minutes);
+    player.update(dt, moveInput, this.particles, minutes);
 
-    // 2. Check Player Light death
-    if (this.player.light <= 0) {
+    if (player.light <= 0) {
       this.handleGameOver();
       return;
     }
 
-    // 3. Spawning
+    // 2. Spawning
     this.handleSpawning(dt);
 
-    // 4. Update Weapons (Auto-aiming!)
+    // Spatial grid for this step (separation, projectile hits)
+    this.enemyGrid.rebuild(this.enemies);
+
+    // 3. Weapons (auto-aim)
     for (const weapon of this.weapons) {
-      weapon.update(
-        dt,
-        this.player,
-        this.enemies,
-        this.boss,
-        this.particles,
-        this.playerProjectiles
-      );
+      weapon.update(dt, player, this.enemies, this.boss, this.particles, this.playerProjectiles);
     }
 
-    // 5. Update Player Projectiles & Collision
-    const lightRadius = this.player.getLightRadius();
+    // 4. Player projectiles
+    this.updatePlayerProjectiles(dt);
+
+    // 5. Enemies: separation, AI, contact damage
+    this.separateEnemies();
+    const projectileSpeedBonus = 1 + Math.min(0.55, minutes * 0.08);
+    const lightRadius = player.getLightRadius();
+    for (const enemy of this.enemies) {
+      if (enemy.dead) continue;
+      enemy.update(dt, player, this.enemyProjectiles, this.mortarZones, this.particles, projectileSpeedBonus, lightRadius);
+
+      const hitDist = enemy.radius + player.hurtRadius;
+      if ((enemy.x - player.x) ** 2 + (enemy.y - player.y) ** 2 < hitDist * hitDist) {
+        if (player.takeDamage(enemy.damage, this.particles)) {
+          this.onPlayerHit(7);
+          // Leech steals light, heals itself, and grows until killed
+          if (enemy.type === 'leech') {
+            enemy.stolenLight += 12;
+            enemy.hp = Math.min(enemy.maxHp * 2, enemy.hp + 35);
+            enemy.radius = Math.min(22, enemy.radius + 2.5);
+            this.particles.emitBannerText(enemy.x, enemy.y, 'LICHT GESTOHLEN!', '#c084fc');
+          }
+        }
+      }
+    }
+
+    // 6. Hazards & zones
+    this.updateSolarZones(dt);
+    this.updateShadowRifts(dt);
+    this.updateMortarZones(dt);
+    this.updateObelisks(dt);
+
+    // 7. Boss
+    if (this.boss && !this.boss.isDefeated) {
+      const boss = this.boss;
+      boss.update(dt, player, this.enemyProjectiles, this.mortarZones, this.particles, this.bossSpawns);
+      this.consumeBossSpawns(minutes);
+      const hit = boss.radius + player.hurtRadius;
+      if ((boss.x - player.x) ** 2 + (boss.y - player.y) ** 2 < hit * hit) {
+        const contactDmg = 28 * Balance.bossDamageScale(boss.bossNumber) * (boss.isCharging ? 1.4 : 1);
+        if (player.takeDamage(contactDmg, this.particles)) this.onPlayerHit(12);
+      }
+    }
+
+    // 8. Enemy projectiles (Orbiters can block them)
+    this.updateEnemyProjectiles(dt);
+
+    // 9. Resolve all deaths from every damage source in one place
+    this.resolveDeaths();
+
+    // 10. Drops
+    this.updateDrops(dt);
+
+    // 11. Particles
+    this.particles.update(dt);
+  }
+
+  private onPlayerHit(shake: number) {
+    this.renderer.triggerScreenShake(shake, 0.22);
+    haptic(40);
+  }
+
+  private updatePlayerProjectiles(dt: number) {
+    const player = this.player;
+    const lightRadius = player.getLightRadius();
+    const critChance = player.getCritChance();
+    const critMult = player.getCritMultiplier();
+    const boss = this.boss && !this.boss.isDefeated ? this.boss : null;
+
     for (let i = this.playerProjectiles.length - 1; i >= 0; i--) {
       const p = this.playerProjectiles[i];
       p.life += dt;
       if (p.life >= p.maxLife) {
-        if (p.spawnsSolarZone) {
-          this.spawnSolarBurnZone(p.x, p.y, p.damage);
-        }
-        this.playerProjectiles.splice(i, 1);
+        if (p.spawnsSolarZone) this.spawnSolarBurnZone(p.x, p.y, p.damage);
+        this.removePlayerProjectile(i);
         continue;
       }
 
-      // Homing logic (all targeted projectiles smoothly steer towards the nearest enemy!)
+      // Homing: steer towards the nearest living target
       if (p.isHoming) {
         let nearestTarget: Enemy | Boss | null = null;
-        let minDist = p.boundToLightRadius ? lightRadius + 15 : 750;
-
-        for (const enemy of this.enemies) {
-          if (p.boundToLightRadius && Math.hypot(enemy.x - this.player.x, enemy.y - this.player.y) > lightRadius + 20) {
-            continue;
-          }
-          const d = Math.hypot(enemy.x - p.x, enemy.y - p.y);
-          if (d < minDist) {
-            minDist = d;
+        const searchR = p.boundToLightRadius ? lightRadius + 15 : 750;
+        let minDistSq = searchR * searchR;
+        const boundSq = (lightRadius + 20) ** 2;
+        for (const enemy of this.enemyGrid.query(p.x, p.y, Math.min(searchR, 420))) {
+          if (enemy.dead) continue;
+          if (p.boundToLightRadius && (enemy.x - player.x) ** 2 + (enemy.y - player.y) ** 2 > boundSq) continue;
+          const d = (enemy.x - p.x) ** 2 + (enemy.y - p.y) ** 2;
+          if (d < minDistSq) {
+            minDistSq = d;
             nearestTarget = enemy;
           }
         }
-        if (this.boss && !this.boss.isDefeated) {
-          const d = Math.hypot(this.boss.x - p.x, this.boss.y - p.y);
-          if (d < minDist) {
-            minDist = d;
-            nearestTarget = this.boss;
-          }
+        if (boss) {
+          const d = (boss.x - p.x) ** 2 + (boss.y - p.y) ** 2;
+          if (d < minDistSq) nearestTarget = boss;
         }
-
         if (nearestTarget) {
           const targetAngle = Math.atan2(nearestTarget.y - p.y, nearestTarget.x - p.x);
           const curAngle = Math.atan2(p.vy, p.vx);
@@ -414,110 +553,91 @@ export class Game {
       p.x += p.vx * dt;
       p.y += p.vy * dt;
 
-      // Strictly bind non-Sparks projectiles to the dashed light perimeter line!
-      if (p.boundToLightRadius) {
-        const distFromPlayer = Math.hypot(p.x - this.player.x, p.y - this.player.y);
-        if (distFromPlayer >= lightRadius) {
-          if (p.spawnsSolarZone) {
-            this.spawnSolarBurnZone(p.x, p.y, p.damage);
-          }
-          this.particles.emitSpark(p.x, p.y, p.color, 4);
-          this.playerProjectiles.splice(i, 1);
-          continue;
-        }
+      // Most projectiles end at the dashed light perimeter
+      if (p.boundToLightRadius && (p.x - player.x) ** 2 + (p.y - player.y) ** 2 >= lightRadius * lightRadius) {
+        if (p.spawnsSolarZone) this.spawnSolarBurnZone(p.x, p.y, p.damage);
+        this.particles.emitSpark(p.x, p.y, p.color, 2);
+        this.removePlayerProjectile(i);
+        continue;
       }
 
-      // Projectile hit enemies (with Overcharge + Hunter crit check & Sparks chain bounce!)
-      const critChance = this.player.getCritChance();
-      const critMult = this.player.getCritMultiplier();
       let hit = false;
-      for (let eIdx = this.enemies.length - 1; eIdx >= 0; eIdx--) {
-        const enemy = this.enemies[eIdx];
-        if (Math.hypot(enemy.x - p.x, enemy.y - p.y) < enemy.radius + p.radius) {
-          const isCrit = p.bypassesShield || Math.random() < critChance;
-          const finalDmg = isCrit ? p.damage * critMult : p.damage;
-          const hitOrigin = p.bypassesShield ? undefined : { x: p.x, y: p.y };
-          const isDead = enemy.takeDamage(finalDmg, this.particles, hitOrigin, isCrit);
+      for (const enemy of this.enemyGrid.query(p.x, p.y, p.radius)) {
+        if (enemy.dead) continue;
+        const rr = enemy.radius + p.radius;
+        if ((enemy.x - p.x) ** 2 + (enemy.y - p.y) ** 2 >= rr * rr) continue;
 
-          if (p.staggerStrength && p.staggerStrength > 0) {
-            const spd = Math.hypot(p.vx, p.vy) || 1;
-            enemy.vx += (p.vx / spd) * p.staggerStrength;
-            enemy.vy += (p.vy / spd) * p.staggerStrength;
-          }
-
-          if (isDead) {
-            this.handleEnemyDefeat(enemy);
-            this.enemies.splice(eIdx, 1);
-          }
-
-          if (p.spawnsSolarZone) {
-            this.spawnSolarBurnZone(p.x, p.y, p.damage);
-            p.spawnsSolarZone = false;
-          }
-
-          // Sparks Chain-Bounce to another nearby enemy!
-          if (p.chainBouncesLeft && p.chainBouncesLeft > 0) {
-            p.chainBouncesLeft -= 1;
-            let bounceTarget: Enemy | null = null;
-            let bDist = 260;
-            for (const other of this.enemies) {
-              if (other === enemy) continue;
-              const d = Math.hypot(other.x - p.x, other.y - p.y);
-              if (d < bDist) {
-                bDist = d;
-                bounceTarget = other;
-              }
-            }
-            if (bounceTarget) {
-              const ba = Math.atan2(bounceTarget.y - p.y, bounceTarget.x - p.x);
-              const spd = p.homingSpeed ?? 390;
-              p.vx = Math.cos(ba) * spd;
-              p.vy = Math.sin(ba) * spd;
-              p.pierce += 1;
-              this.particles.emitSpark(p.x, p.y, '#34d399', 6);
-            }
-          }
-
-          p.pierce -= 1;
-          hit = true;
-          if (p.onHitExplode) {
-            this.particles.emitExplosion(p.x, p.y, p.color, 18);
-          }
-          if (p.pierce <= 0) break;
-        }
-      }
-
-      // Projectile hit boss
-      if (!hit && this.boss && Math.hypot(this.boss.x - p.x, this.boss.y - p.y) < this.boss.radius + p.radius) {
         const isCrit = p.bypassesShield || Math.random() < critChance;
         const finalDmg = isCrit ? p.damage * critMult : p.damage;
-        const isDead = this.boss.takeDamage(finalDmg, this.particles, isCrit);
-        if (isDead) {
-          this.handleBossDefeat();
+        const hitOrigin = p.bypassesShield ? undefined : { x: p.x, y: p.y };
+        enemy.takeDamage(finalDmg, this.particles, hitOrigin, isCrit);
+
+        if (p.staggerStrength && p.staggerStrength > 0) {
+          const spd = Math.hypot(p.vx, p.vy) || 1;
+          enemy.applyKnockback((p.vx / spd) * p.staggerStrength, (p.vy / spd) * p.staggerStrength);
         }
         if (p.spawnsSolarZone) {
           this.spawnSolarBurnZone(p.x, p.y, p.damage);
           p.spawnsSolarZone = false;
         }
-        p.pierce -= 1;
-        if (p.onHitExplode) {
-          this.particles.emitExplosion(p.x, p.y, p.color, 24);
+
+        // Sparks chain-bounce to another nearby enemy
+        if (p.chainBouncesLeft && p.chainBouncesLeft > 0) {
+          p.chainBouncesLeft -= 1;
+          let bounceTarget: Enemy | null = null;
+          let bDist = 260 * 260;
+          for (const other of this.enemyGrid.query(p.x, p.y, 260)) {
+            if (other === enemy || other.dead) continue;
+            const d = (other.x - p.x) ** 2 + (other.y - p.y) ** 2;
+            if (d < bDist) {
+              bDist = d;
+              bounceTarget = other;
+            }
+          }
+          if (bounceTarget) {
+            const ba = Math.atan2(bounceTarget.y - p.y, bounceTarget.x - p.x);
+            const spd = p.homingSpeed ?? 390;
+            p.vx = Math.cos(ba) * spd;
+            p.vy = Math.sin(ba) * spd;
+            p.pierce += 1;
+            this.particles.emitSpark(p.x, p.y, '#34d399', 4);
+          }
         }
+
+        p.pierce -= 1;
+        hit = true;
+        if (p.onHitExplode) this.particles.emitExplosion(p.x, p.y, p.color, 12);
+        if (p.pierce <= 0) break;
       }
 
-      if (p.pierce <= 0) {
-        this.playerProjectiles.splice(i, 1);
+      if (!hit && boss && (boss.x - p.x) ** 2 + (boss.y - p.y) ** 2 < (boss.radius + p.radius) ** 2) {
+        const isCrit = p.bypassesShield || Math.random() < critChance;
+        boss.takeDamage(isCrit ? p.damage * critMult : p.damage, this.particles, isCrit);
+        if (p.spawnsSolarZone) {
+          this.spawnSolarBurnZone(p.x, p.y, p.damage);
+          p.spawnsSolarZone = false;
+        }
+        p.pierce -= 1;
+        if (p.onHitExplode) this.particles.emitExplosion(p.x, p.y, p.color, 16);
       }
+
+      if (p.pierce <= 0) this.removePlayerProjectile(i);
     }
+  }
 
-    // 6. Update Enemies with minute scaling, swarm separation & Leech light-steal
-    const projectileSpeedBonus = 1 + Math.min(0.55, minutes * 0.08);
+  private removePlayerProjectile(i: number) {
+    const last = this.playerProjectiles.length - 1;
+    if (i !== last) this.playerProjectiles[i] = this.playerProjectiles[last];
+    this.playerProjectiles.pop();
+  }
 
-    // Swarm separation physics: fast squared-distance check so Math.sqrt only runs on overlapping pairs!
-    for (let i = 0; i < this.enemies.length; i++) {
-      const e1 = this.enemies[i];
-      for (let j = i + 1; j < this.enemies.length; j++) {
-        const e2 = this.enemies[j];
+  /** Swarm separation via spatial grid (was O(n²)). */
+  private separateEnemies() {
+    for (const e1 of this.enemies) {
+      for (const e2 of this.enemyGrid.query(e1.x, e1.y, e1.radius + 30)) {
+        if (e2 === e1 || e2.dead) continue;
+        // Process each pair once
+        if (e2.x < e1.x || (e2.x === e1.x && e2.y <= e1.y)) continue;
         const dx = e2.x - e1.x;
         const dy = e2.y - e1.y;
         const minSep = e1.radius + e2.radius + 4;
@@ -534,36 +654,10 @@ export class Game {
         }
       }
     }
+  }
 
-    for (let i = this.enemies.length - 1; i >= 0; i--) {
-      const enemy = this.enemies[i];
-      enemy.update(dt, this.player, this.enemyProjectiles, this.mortarZones, this.particles, projectileSpeedBonus);
-
-      // Check if enemy died from burn/phosphor
-      if (enemy.hp <= 0) {
-        this.handleEnemyDefeat(enemy);
-        this.enemies.splice(i, 1);
-        continue;
-      }
-
-      // Collision with player
-      const dist = Math.hypot(enemy.x - this.player.x, enemy.y - this.player.y);
-      if (dist < enemy.radius + this.player.radius) {
-        const tookHit = this.player.takeDamage(enemy.damage, this.particles);
-        if (tookHit) {
-          this.renderer.triggerScreenShake(7, 0.22);
-          // Leech steals light, heals itself, and grows until killed!
-          if (enemy.type === 'leech') {
-            enemy.stolenLight += 12;
-            enemy.hp = Math.min(enemy.maxHp * 2, enemy.hp + 35);
-            enemy.radius = Math.min(22, enemy.radius + 2.5);
-            this.particles.emitBannerText(enemy.x, enemy.y, 'LIGHT STOLEN!', '#c084fc');
-          }
-        }
-      }
-    }
-
-    // 6a. Update Solar Burn Zones (from Flare weapon!)
+  private updateSolarZones(dt: number) {
+    const boss = this.boss && !this.boss.isDefeated ? this.boss : null;
     for (let i = this.solarZones.length - 1; i >= 0; i--) {
       const sz = this.solarZones[i];
       sz.life += dt;
@@ -571,23 +665,23 @@ export class Game {
         this.solarZones.splice(i, 1);
         continue;
       }
-      for (let eIdx = this.enemies.length - 1; eIdx >= 0; eIdx--) {
-        const enemy = this.enemies[eIdx];
-        if (Math.hypot(enemy.x - sz.x, enemy.y - sz.y) <= sz.radius + enemy.radius) {
+      const tick = sz.damagePerSec * dt;
+      for (const enemy of this.enemyGrid.query(sz.x, sz.y, sz.radius)) {
+        if (enemy.dead) continue;
+        const rr = sz.radius + enemy.radius;
+        if ((enemy.x - sz.x) ** 2 + (enemy.y - sz.y) ** 2 <= rr * rr) {
           enemy.slowTimer = 0.25;
-          enemy.hp -= sz.damagePerSec * dt;
-          if (enemy.hp <= 0) {
-            this.handleEnemyDefeat(enemy);
-            this.enemies.splice(eIdx, 1);
-          }
+          enemy.takeDamage(tick, this.particles, undefined, false, true);
         }
       }
-      if (this.boss && Math.hypot(this.boss.x - sz.x, this.boss.y - sz.y) <= sz.radius + this.boss.radius) {
-        this.boss.takeDamage(sz.damagePerSec * dt, this.particles);
+      if (boss && (boss.x - sz.x) ** 2 + (boss.y - sz.y) ** 2 <= (sz.radius + boss.radius) ** 2) {
+        boss.takeDamage(tick, this.particles, false, true);
       }
     }
+  }
 
-    // 6a-2. Update Shadow Rifts (Gravitational Darkness Hazards)
+  private updateShadowRifts(dt: number) {
+    const player = this.player;
     for (let i = this.shadowRifts.length - 1; i >= 0; i--) {
       const rift = this.shadowRifts[i];
       rift.life += dt;
@@ -596,108 +690,87 @@ export class Game {
         this.shadowRifts.splice(i, 1);
         continue;
       }
-      const pDist = Math.hypot(this.player.x - rift.x, this.player.y - rift.y);
+      const pDist = Math.hypot(player.x - rift.x, player.y - rift.y);
       if (pDist < rift.radius + 65) {
-        // Gentle gravitational pull towards the rift center
         const pull = (1 - pDist / (rift.radius + 65)) * 75;
-        const a = Math.atan2(rift.y - this.player.y, rift.x - this.player.x);
-        this.player.x += Math.cos(a) * pull * dt;
-        this.player.y += Math.sin(a) * pull * dt;
-        if (pDist < rift.radius) {
-          this.player.inShadowRift = true;
-        }
+        const a = Math.atan2(rift.y - player.y, rift.x - player.x);
+        player.x += Math.cos(a) * pull * dt;
+        player.y += Math.sin(a) * pull * dt;
+        if (pDist < rift.radius) player.inShadowRift = true;
       }
     }
+  }
 
-    // 6b. Update Mortar Danger Zones
+  private updateMortarZones(dt: number) {
+    const player = this.player;
     for (let i = this.mortarZones.length - 1; i >= 0; i--) {
       const mz = this.mortarZones[i];
       mz.timer += dt;
-      if (mz.timer >= mz.maxTime) {
-        this.particles.emitExplosion(mz.x, mz.y, '#eab308', 28);
-        this.renderer.triggerScreenShake(8, 0.25);
-        sound.playPulse();
-
-        // Check if player took hit
-        const pDist = Math.hypot(this.player.x - mz.x, this.player.y - mz.y);
-        if (pDist <= mz.radius + this.player.radius) {
-          this.player.takeDamage(mz.damage, this.particles);
-        }
-        this.mortarZones.splice(i, 1);
+      if (mz.timer < mz.maxTime) continue;
+      this.particles.emitExplosion(mz.x, mz.y, '#eab308', 20);
+      this.renderer.triggerScreenShake(6, 0.2);
+      sound.playPulse();
+      if (Math.hypot(player.x - mz.x, player.y - mz.y) <= mz.radius + player.hurtRadius) {
+        if (player.takeDamage(mz.damage, this.particles)) this.onPlayerHit(8);
       }
+      this.mortarZones.splice(i, 1);
     }
+  }
 
-    // 6c. Update Void Obelisks (Risk/Reward Capture Zones)
+  private updateObelisks(dt: number) {
+    const player = this.player;
     const architectSpeedMult =
       1 +
-      (this.player.classId === 'architect' ? forge.getLevel('classMasteryArchitect') * 0.12 : 0) +
-      (this.player.passives.get('architectGrid') ?? 0) * 0.30;
+      (player.classId === 'architect' ? forge.getLevel('classMasteryArchitect') * 0.12 : 0) +
+      (player.passives.get('architectGrid') ?? 0) * 0.3;
 
     for (let i = this.obelisks.length - 1; i >= 0; i--) {
       const ob = this.obelisks[i];
       ob.animTimer += dt;
-      const dist = Math.hypot(this.player.x - ob.x, this.player.y - ob.y);
+      const dist = Math.hypot(player.x - ob.x, player.y - ob.y);
 
-      if (dist <= ob.radius) {
-        ob.charge += dt * architectSpeedMult;
-        ob.spawnGuardTimer += dt;
-
-        // While charging, Obelisk summons fast Void Stalkers to pressure the player!
-        if (ob.spawnGuardTimer >= 1.6 && this.enemies.length < 180) {
-          ob.spawnGuardTimer = 0;
-          const a = Math.random() * Math.PI * 2;
-          const gx = ob.x + Math.cos(a) * 240;
-          const gy = ob.y + Math.sin(a) * 240;
-          const hpScale = Math.pow(1.28, this.survivalTime / 60);
-          this.enemies.push(new Enemy(gx, gy, 'stalker', hpScale, false));
-          this.particles.emitSpark(gx, gy, '#a855f7', 10);
-        }
-
-        if (ob.charge >= ob.maxCharge) {
-          // Obelisk Captured -> PRISMA NOVA + OVERDRIVE!
-          this.particles.emitShockwave(ob.x, ob.y, 420, '#fbbf24', 8);
-          this.particles.emitExplosion(ob.x, ob.y, '#a855f7', 45);
-          this.particles.emitBannerText(this.player.x, this.player.y, 'OBELISK OVERDRIVE! +35 LIGHT', '#fbbf24');
-          this.renderer.triggerScreenShake(14, 0.4);
-          sound.playLevelUp();
-
-          this.player.addLight(35);
-          this.player.overdriveTimer = 8.0; // 8s of supercharged fire rate & speed
-
-          // Damage nearby enemies in the nova blast
-          for (let eIdx = this.enemies.length - 1; eIdx >= 0; eIdx--) {
-            const enemy = this.enemies[eIdx];
-            if (Math.hypot(enemy.x - ob.x, enemy.y - ob.y) <= 380) {
-              const dead = enemy.takeDamage(180, this.particles, { x: ob.x, y: ob.y }, true);
-              if (dead) {
-                this.handleEnemyDefeat(enemy);
-                this.enemies.splice(eIdx, 1);
-              }
-            }
-          }
-
-          // Drop guaranteed Shards & Light
-          for (let s = 0; s < 4; s++) {
-            this.drops.push(new Drop(ob.x, ob.y, 'shard', 1));
-          }
-          this.obelisks.splice(i, 1);
-        }
-      } else {
+      if (dist > ob.radius) {
         ob.charge = Math.max(0, ob.charge - dt * 0.4);
+        continue;
+      }
+      ob.charge += dt * architectSpeedMult;
+      ob.spawnGuardTimer += dt;
+
+      // While charging, the obelisk summons fast Void Stalkers
+      if (ob.spawnGuardTimer >= 1.6 && this.enemies.length < this.getMaxEnemies()) {
+        ob.spawnGuardTimer = 0;
+        const a = Math.random() * Math.PI * 2;
+        const m = this.survivalTime / 60;
+        this.addEnemy(ob.x + Math.cos(a) * 240, ob.y + Math.sin(a) * 240, 'stalker', Balance.enemyHpScale(m), false);
+      }
+
+      if (ob.charge >= ob.maxCharge) {
+        this.particles.emitShockwave(ob.x, ob.y, 420, '#fbbf24', 8);
+        this.particles.emitExplosion(ob.x, ob.y, '#a855f7', 35);
+        this.particles.emitBannerText(player.x, player.y, 'OBELISK OVERDRIVE! +35 LICHT', '#fbbf24');
+        this.renderer.triggerScreenShake(14, 0.4);
+        sound.playLevelUp();
+        haptic([30, 40, 30]);
+
+        player.addLight(35);
+        player.overdriveTimer = Math.max(player.overdriveTimer, 8.0);
+
+        // Nova blast scales with time so obelisks stay worth capturing
+        const blast = 180 * Balance.enemyHpScale(this.survivalTime / 60);
+        for (const enemy of this.enemyGrid.query(ob.x, ob.y, 380)) {
+          if (!enemy.dead && Math.hypot(enemy.x - ob.x, enemy.y - ob.y) <= 380) {
+            enemy.takeDamage(blast, this.particles, { x: ob.x, y: ob.y }, true);
+          }
+        }
+        this.drops.push(Drop.shard(ob.x, ob.y, 'big', 40));
+        for (let s = 0; s < 3; s++) this.drops.push(Drop.shard(ob.x, ob.y, 'small', 40));
+        this.obelisks.splice(i, 1);
       }
     }
+  }
 
-    // 7. Update Boss
-    if (this.boss && !this.boss.isDefeated) {
-      this.boss.update(dt, this.player, this.enemyProjectiles, this.particles, this.drops);
-      const bDist = Math.hypot(this.boss.x - this.player.x, this.boss.y - this.player.y);
-      if (bDist < this.boss.radius + this.player.radius) {
-        this.player.takeDamage(30, this.particles);
-        this.renderer.triggerScreenShake(12, 0.35);
-      }
-    }
-
-    // 8. Update Enemy Projectiles (and check Orbiters projectile deflection!)
+  private updateEnemyProjectiles(dt: number) {
+    const player = this.player;
     const activeOrbiters = this.weapons.find((w) => w instanceof OrbitersWeapon) as OrbitersWeapon | undefined;
     for (let i = this.enemyProjectiles.length - 1; i >= 0; i--) {
       const ep = this.enemyProjectiles[i];
@@ -709,365 +782,376 @@ export class Game {
       ep.x += ep.vx * dt;
       ep.y += ep.vy * dt;
 
-      // Check if Orbiters block this enemy projectile!
       if (activeOrbiters) {
         let deflected = false;
         for (const orb of activeOrbiters.currentOrbPositions) {
-          if (Math.hypot(ep.x - orb.x, ep.y - orb.y) < ep.radius + 12) {
-            this.particles.emitSpark(ep.x, ep.y, '#38bdf8', 6);
-            this.enemyProjectiles.splice(i, 1);
+          if ((ep.x - orb.x) ** 2 + (ep.y - orb.y) ** 2 < (ep.radius + 12) ** 2) {
+            this.particles.emitSpark(ep.x, ep.y, '#38bdf8', 4);
             deflected = true;
             break;
           }
         }
-        if (deflected) continue;
+        if (deflected) {
+          this.enemyProjectiles.splice(i, 1);
+          continue;
+        }
       }
 
-      // Check collision with player
-      if (Math.hypot(ep.x - this.player.x, ep.y - this.player.y) < ep.radius + this.player.radius) {
-        this.player.takeDamage(ep.damage, this.particles);
-        this.renderer.triggerScreenShake(8, 0.25);
+      const hr = ep.radius + player.hurtRadius;
+      if ((ep.x - player.x) ** 2 + (ep.y - player.y) ** 2 < hr * hr) {
+        if (player.takeDamage(ep.damage, this.particles)) this.onPlayerHit(8);
         this.enemyProjectiles.splice(i, 1);
       }
     }
+  }
 
-    // 9. Update Drops (Light & Shards)
-    const magnetRadius = this.player.getMagnetRadius();
+  private updateDrops(dt: number) {
+    const player = this.player;
+    const magnetRadius = player.getMagnetRadius();
     for (let i = this.drops.length - 1; i >= 0; i--) {
       const drop = this.drops[i];
-      const alive = drop.update(dt, this.player.x, this.player.y, magnetRadius);
-
+      const alive = drop.update(dt, player.x, player.y, magnetRadius);
       if (drop.isCollected) {
         if (drop.type === 'light') {
-          this.player.addLight(drop.value);
+          player.addLight(drop.value);
           sound.playShard(false);
         } else {
-          this.player.shardsCollectedThisRun += drop.value;
+          player.shardsCollectedThisRun += drop.value;
           sound.playShard(true);
         }
-        this.particles.emitSpark(drop.x, drop.y, drop.color, 6);
-        this.drops.splice(i, 1);
-      } else if (!alive) {
-        this.drops.splice(i, 1);
+        if (drop.size === 'big') {
+          this.particles.emitBannerText(drop.x, drop.y, drop.type === 'light' ? `+${Math.round(drop.value)} LICHT` : `+${drop.value} ✦`, drop.color);
+        }
+        this.particles.emitSpark(drop.x, drop.y, drop.color, drop.size === 'big' ? 8 : 3);
+      }
+      if (drop.isCollected || !alive) {
+        const last = this.drops.length - 1;
+        if (i !== last) this.drops[i] = this.drops[last];
+        this.drops.pop();
       }
     }
+  }
 
-    // 10. Update Particles
-    this.particles.update(dt);
+  /** Collects every enemy that died this step (any damage source) and rewards it once. */
+  private resolveDeaths() {
+    let write = 0;
+    for (let read = 0; read < this.enemies.length; read++) {
+      const enemy = this.enemies[read];
+      if (!enemy.dead) enemy.checkDeath(this.particles);
+      if (enemy.dead) {
+        this.handleEnemyDefeat(enemy);
+      } else {
+        this.enemies[write++] = enemy;
+      }
+    }
+    // handleEnemyDefeat may append splitter children after `read` finished - keep them
+    this.enemies.length = write;
+    if (this.splitterQueue.length > 0) {
+      this.enemies.push(...this.splitterQueue);
+      this.splitterQueue.length = 0;
+    }
 
-    // 11. Update HUD
-    this.hud.update(this.player, this.survivalTime, this.boss, this.weapons);
+    if (this.boss && this.boss.isDefeated) this.handleBossDefeat();
+  }
+
+  private splitterQueue: Enemy[] = [];
+
+  private getMaxEnemies(): number {
+    const base = this.renderer.quality === 'low' ? 95 : this.renderer.quality === 'medium' ? 125 : 150;
+    return this.boss && !this.boss.isDefeated ? Math.floor(base * 0.6) : base;
+  }
+
+  private addEnemy(x: number, y: number, type: EnemyType, hpScale: number, elite: boolean, speedScale: number = 1) {
+    const m = this.survivalTime / 60;
+    const enemy = new Enemy(x, y, type, hpScale, elite, speedScale, Balance.enemyDamageScale(m));
+    this.enemies.push(enemy);
+    return enemy;
   }
 
   private handleSpawning(dt: number) {
     this.enemySpawnTimer += dt;
     this.obeliskSpawnTimer += dt;
     this.swarmEventTimer += dt;
+    this.riftSpawnTimer += dt;
+    const bossActive = !!this.boss && !this.boss.isDefeated;
 
-    // Boss spawns at 2m (120s), 4m30s (270s), 7m30s (450s) so action escalates much faster!
-    if (this.survivalTime >= 120 && !this.boss1Spawned) {
-      this.boss1Spawned = true;
-      this.spawnBoss(1);
-    } else if (this.survivalTime >= 270 && !this.boss2Spawned) {
-      this.boss2Spawned = true;
-      this.spawnBoss(2);
-    } else if (this.survivalTime >= 450 && !this.boss3Spawned) {
-      this.boss3Spawned = true;
-      this.spawnBoss(3);
+    // Endless boss chain: the next boss comes after a stretch of boss-free time
+    if (!bossActive) {
+      this.bossFreeTimer += dt;
+      const remaining = Balance.bossInterval(this.nextBossNumber) - this.bossFreeTimer;
+      if (remaining <= 10 && remaining + dt > 10) {
+        this.particles.emitBannerText(this.player.x, this.player.y - 40, `⚠ BOSS ${this.nextBossNumber} NAHT ⚠`, '#f43f5e');
+      }
+      if (remaining <= 0) {
+        this.spawnBoss(this.nextBossNumber);
+        this.nextBossNumber += 1;
+        this.bossFreeTimer = 0;
+      }
     }
 
-    // Spawn Void Obelisks every 35 seconds (max 2 active at once)
+    // Void Obelisks every 35s (max 2)
     if (this.obeliskSpawnTimer >= 35 && this.obelisks.length < 2) {
       this.obeliskSpawnTimer = 0;
       const angle = Math.random() * Math.PI * 2;
       const dist = 360 + Math.random() * 240;
-      let ox = this.player.x + Math.cos(angle) * dist;
-      let oy = this.player.y + Math.sin(angle) * dist;
-      const dCenter = Math.hypot(ox, oy);
-      if (dCenter > Player.ARENA_RADIUS - 140) {
-        const a = Math.atan2(oy, ox);
-        ox = Math.cos(a) * (Player.ARENA_RADIUS - 140);
-        oy = Math.sin(a) * (Player.ARENA_RADIUS - 140);
-      }
-      this.obelisks.push({
-        x: ox,
-        y: oy,
-        radius: 95,
-        charge: 0,
-        maxCharge: 4.5,
-        animTimer: 0,
-        spawnGuardTimer: 0
-      });
-      this.particles.emitBannerText(this.player.x, this.player.y, 'VOID OBELISK MANIFESTED!', '#c084fc');
+      const pos = clampToArena(this.player.x + Math.cos(angle) * dist, this.player.y + Math.sin(angle) * dist, 140);
+      this.obelisks.push({ x: pos.x, y: pos.y, radius: 95, charge: 0, maxCharge: 4.5, animTimer: 0, spawnGuardTimer: 0 });
+      this.particles.emitBannerText(this.player.x, this.player.y, 'VOID OBELISK ERSCHIENEN!', '#c084fc');
     }
 
-    // Coordinated Swarm Ambush Events every 48 seconds (paused while a Boss is active!)
-    if (this.swarmEventTimer >= 48 && !this.boss && this.enemies.length < 110) {
+    // Swarm encirclement every 48s (not during boss fights)
+    if (this.swarmEventTimer >= 48 && !bossActive && this.enemies.length < this.getMaxEnemies() - 10) {
       this.swarmEventTimer = 0;
       this.spawnSwarmRing();
     }
 
-    // Spawn Shadow Rifts starting at 45s (gravitational light-draining hazards)
-    this.riftSpawnTimer += dt;
+    // Shadow rifts from 0:45
     if (this.survivalTime >= 45 && this.riftSpawnTimer >= 28 && this.shadowRifts.length < 3) {
       this.riftSpawnTimer = 0;
       const a = Math.random() * Math.PI * 2;
       const d = 180 + Math.random() * 220;
-      this.shadowRifts.push({
-        x: this.player.x + Math.cos(a) * d,
-        y: this.player.y + Math.sin(a) * d,
-        radius: 85,
-        life: 0,
-        maxLife: 18,
-        animTimer: 0
-      });
+      this.addRift(this.player.x + Math.cos(a) * d, this.player.y + Math.sin(a) * d);
     }
 
-    // Spawn rate: scales with time AND player's light, but slows down by 40% during Boss fights!
-    const lightFactor = this.player.light / 100;
-    const timeFactor = 1 + this.survivalTime / 78;
-    const bossSlowdown = this.boss && !this.boss.isDefeated ? 1.65 : 1.0;
-    const spawnInterval = Math.max(0.26, (1.35 * bossSlowdown) / (timeFactor * (0.75 + lightFactor * 0.45)));
-    const maxEnemies = this.boss && !this.boss.isDefeated ? 75 : 130;
-
-    if (this.enemySpawnTimer >= spawnInterval && this.enemies.length < maxEnemies) {
+    const lightRatio = this.player.light / 100;
+    const spawnInterval = Balance.spawnInterval(this.survivalTime, lightRatio, bossActive);
+    if (this.enemySpawnTimer >= spawnInterval && this.enemies.length < this.getMaxEnemies()) {
       this.enemySpawnTimer = 0;
-      // Spawn packs of 1-2 enemies (only 1 during boss fight so you aren't overwhelmed!)
-      const packSize = this.boss ? 1 : this.survivalTime > 110 ? 2 : this.survivalTime > 45 && Math.random() < 0.45 ? 2 : 1;
-      for (let p = 0; p < packSize; p++) {
-        this.spawnEnemyWave();
-      }
+      const packSize = bossActive ? 1 : Balance.packSize(this.survivalTime);
+      for (let p = 0; p < packSize; p++) this.spawnEnemyWave();
     }
+  }
+
+  private addRift(x: number, y: number) {
+    const pos = clampToArena(x, y, 100);
+    this.shadowRifts.push({ x: pos.x, y: pos.y, radius: 85, life: 0, maxLife: 18, animTimer: 0 });
+  }
+
+  private consumeBossSpawns(minutes: number) {
+    const hpScale = Balance.enemyHpScale(minutes) * 0.7;
+    for (const m of this.bossSpawns.minions) {
+      if (this.enemies.length >= this.getMaxEnemies() + 20) break;
+      this.addEnemy(m.x, m.y, Math.random() < 0.6 ? 'mote' : 'stalker', hpScale, false, Balance.enemySpeedScale(minutes));
+    }
+    for (const r of this.bossSpawns.rifts) {
+      if (this.shadowRifts.length < 4) this.addRift(r.x, r.y);
+    }
+    this.bossSpawns.minions.length = 0;
+    this.bossSpawns.rifts.length = 0;
   }
 
   private spawnSwarmRing() {
     const minutes = this.survivalTime / 60;
-    const hpScaling = Math.pow(1.30, minutes) * 0.78;
-    const count = Math.min(12, 8 + Math.floor(minutes * 1.5));
+    const hpScaling = Balance.enemyHpScale(minutes) * 0.75;
+    const count = Math.min(16, 8 + Math.floor(minutes * 1.2));
     const ringRadius = 460;
 
-    this.particles.emitBannerText(this.player.x, this.player.y, '⚠ SWARM ENCIRCLEMENT ⚠', '#f43f5e');
+    this.particles.emitBannerText(this.player.x, this.player.y, '⚠ SCHWARM-UMZINGELUNG ⚠', '#f43f5e');
     sound.playBossAlarm();
 
     for (let i = 0; i < count; i++) {
       const a = (i / count) * Math.PI * 2;
-      let sx = this.player.x + Math.cos(a) * ringRadius;
-      let sy = this.player.y + Math.sin(a) * ringRadius;
-      const dCenter = Math.hypot(sx, sy);
-      if (dCenter > Player.ARENA_RADIUS - 40) {
-        const ca = Math.atan2(sy, sx);
-        sx = Math.cos(ca) * (Player.ARENA_RADIUS - 40);
-        sy = Math.sin(ca) * (Player.ARENA_RADIUS - 40);
-      }
+      const pos = clampToArena(this.player.x + Math.cos(a) * ringRadius, this.player.y + Math.sin(a) * ringRadius, 40);
       const swarmType: EnemyType = minutes >= 1.5 && i % 4 === 0 ? 'stalker' : 'mote';
-      this.enemies.push(new Enemy(sx, sy, swarmType, hpScaling, false));
+      this.addEnemy(pos.x, pos.y, swarmType, hpScaling, false, Balance.enemySpeedScale(minutes));
     }
   }
 
-  private executeSupernovaBlast(sacrificedLight: number) {
+  private executeSupernovaBlast(sacrificedLight: number, minutes: number) {
     const px = this.player.x;
     const py = this.player.y;
 
     const catalystLvl = forge.getLevel('supernovaCatalyst');
     const ascensionLvl = this.player.passives.get('novaAscension') ?? 0;
     const dmgBonusMult = 1 + catalystLvl * 0.25 + ascensionLvl * 0.45;
-    const blastDamage = (500 + sacrificedLight * 18) * dmgBonusMult;
+    // Scales with enemy HP so the ultimate stays a real screen-clear late in a run
+    const blastDamage = (260 + sacrificedLight * 9) * Balance.enemyHpScale(minutes) * dmgBonusMult;
 
-    // 1. Massive dual shockwaves + explosion + screen shake
-    this.particles.emitShockwave(px, py, 950, '#fbbf24', 12);
-    this.particles.emitShockwave(px, py, 650, '#00f3ff', 8);
-    this.particles.emitExplosion(px, py, '#fbbf24', 65);
-    this.particles.emitBannerText(px, py - 24, '⚡ SUPERNOVA OPFER! (-97% LICHT) ⚡', '#fbbf24');
+    this.particles.emitShockwave(px, py, 950, '#fbbf24', 12, 0.6);
+    this.particles.emitShockwave(px, py, 650, '#00f3ff', 8, 0.5);
+    this.particles.emitExplosion(px, py, '#fbbf24', 50);
+    this.particles.emitBannerText(px, py - 24, '⚡ SUPERNOVA! ⚡', '#fbbf24');
     this.renderer.triggerScreenShake(24, 0.75);
+    haptic([60, 40, 120]);
 
-    // 2. Wipe all enemy projectiles, mortar zones, and shadow rifts
-    for (const ep of this.enemyProjectiles) {
-      this.particles.emitSpark(ep.x, ep.y, '#fbbf24', 3);
-    }
+    for (const ep of this.enemyProjectiles) this.particles.emitSpark(ep.x, ep.y, '#fbbf24', 2);
     this.enemyProjectiles = [];
     this.mortarZones = [];
     this.shadowRifts = [];
 
-    // 3. Devastate all enemies on screen / within 1150px
-    for (let i = this.enemies.length - 1; i >= 0; i--) {
-      const enemy = this.enemies[i];
-      const d = Math.hypot(enemy.x - px, enemy.y - py);
-      if (d <= 1150) {
-        enemy.slowTimer = 5.0; // Freeze/slow survivors
-        const isDead = enemy.takeDamage(blastDamage, this.particles, undefined, true);
-        if (isDead) {
-          this.handleEnemyDefeat(enemy);
-          this.enemies.splice(i, 1);
-        }
+    for (const enemy of this.enemies) {
+      if (enemy.dead) continue;
+      if (Math.hypot(enemy.x - px, enemy.y - py) <= 1150) {
+        enemy.slowTimer = 5.0;
+        enemy.takeDamage(blastDamage, this.particles, undefined, true);
       }
     }
 
-    // 4. Heavy damage to Boss if active
     if (this.boss && !this.boss.isDefeated) {
-      const bossDead = this.boss.takeDamage(blastDamage * 0.65, this.particles, true);
-      if (bossDead) {
-        this.handleBossDefeat();
-      }
+      // Bosses take a fixed share of their max HP so the nova matters in every boss fight
+      this.boss.takeDamage(this.boss.maxHp * (0.12 + ascensionLvl * 0.03), this.particles, true);
     }
 
-    // 5. Leave a ring of 6 Solar Burn Zones around the player to protect them while at 3% Light!
+    // Protective ring of solar fields
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * Math.PI * 2;
-      const zx = px + Math.cos(a) * 105;
-      const zy = py + Math.sin(a) * 105;
-      this.spawnSolarBurnZone(zx, zy, 95 * dmgBonusMult);
+      this.spawnSolarBurnZone(px + Math.cos(a) * 105, py + Math.sin(a) * 105, 95 * dmgBonusMult * Balance.enemyHpScale(minutes) * 0.5);
     }
   }
 
   private spawnSolarBurnZone(x: number, y: number, baseDmg: number) {
-    this.solarZones.push({
-      x,
-      y,
-      radius: 68,
-      damagePerSec: baseDmg * 0.65,
-      life: 0,
-      maxLife: 3.2
-    });
-    this.particles.emitExplosion(x, y, '#f97316', 22);
+    if (this.solarZones.length > 24) this.solarZones.shift();
+    this.solarZones.push({ x, y, radius: 68, damagePerSec: baseDmg * 0.65, life: 0, maxLife: 3.2 });
+    this.particles.emitExplosion(x, y, '#f97316', 12);
   }
 
   private spawnEnemyWave() {
-    const minutes = this.survivalTime / 60;
-    // Balanced dynamic scaling: +32% HP and +6% speed per elapsed minute!
-    const hpScaling = Math.pow(1.32, minutes);
-    const speedScaling = 1 + Math.min(0.5, minutes * 0.06);
+    const seconds = this.survivalTime;
+    const minutes = seconds / 60;
 
-    // Faster enemy variety progression so combat stays exciting right from the first minute!
     const types: EnemyType[] = ['mote', 'mote'];
-    if (this.survivalTime > 15) types.push('splitter', 'leech');
-    if (this.survivalTime > 30) types.push('stalker');
-    if (this.survivalTime > 45) types.push('charger');
-    if (this.survivalTime >= 60) types.push('spitter', 'phantom');
-    if (this.survivalTime >= 95) types.push('scatterer', 'sniper');
-    if (this.survivalTime >= 140) types.push('mortar', 'vanguard');
-    if (this.survivalTime >= 190) types.push('behemoth', 'eclipseOrb');
+    if (seconds > 15) types.push('splitter', 'leech');
+    if (seconds > 30) types.push('stalker');
+    if (seconds > 45) types.push('charger');
+    if (seconds >= 60) types.push('spitter', 'phantom');
+    if (seconds >= 95) types.push('scatterer', 'sniper');
+    if (seconds >= 140) types.push('mortar', 'vanguard');
+    if (seconds >= 190) types.push('behemoth', 'eclipseOrb');
 
     const chosenType = types[Math.floor(Math.random() * types.length)];
+    const isElite = Math.random() < Balance.eliteChance(seconds);
 
-    // Elite Champions appear starting at 0:50
-    let isElite = false;
-    if (this.survivalTime >= 50) {
-      const eliteChance = Math.min(0.32, 0.08 + minutes * 0.04);
-      isElite = Math.random() < eliteChance;
-    }
-
-    // Spawn just outside the player's screen view, clamped inside the vast circular arena
+    // Spawn just outside the visible screen (corner distance + margin)
     const angle = Math.random() * Math.PI * 2;
-    const dist = Math.max(window.innerWidth, window.innerHeight) * 0.58 + Math.random() * 80;
-    let spawnX = this.player.x + Math.cos(angle) * dist;
-    let spawnY = this.player.y + Math.sin(angle) * dist;
+    const halfDiag = Math.hypot(this.renderer.viewWidth, this.renderer.viewHeight) / 2;
+    const dist = halfDiag + 50 + Math.random() * 80;
+    const pos = clampToArena(this.player.x + Math.cos(angle) * dist, this.player.y + Math.sin(angle) * dist, 40);
 
-    const spawnDistCenter = Math.hypot(spawnX, spawnY);
-    if (spawnDistCenter > Player.ARENA_RADIUS - 40) {
-      const a = Math.atan2(spawnY, spawnX);
-      spawnX = Math.cos(a) * (Player.ARENA_RADIUS - 40);
-      spawnY = Math.sin(a) * (Player.ARENA_RADIUS - 40);
-    }
-
-    this.enemies.push(new Enemy(spawnX, spawnY, chosenType, hpScaling, isElite, speedScaling));
+    this.addEnemy(pos.x, pos.y, chosenType, Balance.enemyHpScale(minutes), isElite, Balance.enemySpeedScale(minutes));
   }
 
-  private spawnBoss(bossId: number) {
+  private spawnBoss(bossNumber: number) {
     const angle = Math.random() * Math.PI * 2;
-    const dist = 520;
-    let bx = this.player.x + Math.cos(angle) * dist;
-    let by = this.player.y + Math.sin(angle) * dist;
-
-    const bDistCenter = Math.hypot(bx, by);
-    if (bDistCenter > Player.ARENA_RADIUS - 80) {
-      const a = Math.atan2(by, bx);
-      bx = Math.cos(a) * (Player.ARENA_RADIUS - 80);
-      by = Math.sin(a) * (Player.ARENA_RADIUS - 80);
-    }
-
-    this.boss = new Boss(bossId, bx, by);
+    const pos = clampToArena(this.player.x + Math.cos(angle) * 520, this.player.y + Math.sin(angle) * 520, 80);
+    this.boss = new Boss(bossNumber, pos.x, pos.y);
+    this.particles.emitBannerText(this.player.x, this.player.y - 50, `BOSS ${bossNumber}: ${this.boss.name}`, this.boss.color);
     this.renderer.triggerScreenShake(20, 0.8);
+    haptic([80, 60, 80]);
   }
 
   private handleEnemyDefeat(enemy: Enemy) {
-    this.player.registerKill();
-    this.player.score += enemy.scoreValue * this.player.getTotalMultiplier();
+    const player = this.player;
+    player.registerKill();
+    player.score += enemy.scoreValue * player.getTotalMultiplier();
+    player.addNovaCharge(enemy.isElite ? 5 : 1);
 
-    // Balanced Light Mote recovery (5.0-8.0 base light + returns any stolen Leech light!)
-    const harvesterLvl = this.player.passives.get('lightHarvester') ?? 0;
-    const vanguardLightMastery = this.player.classId === 'vanguard' ? forge.getLevel('classMasteryVanguard') * 0.10 : 0;
-    const baseLight = enemy.isElite ? 22 : (5.0 + Math.random() * 3.0);
-    const lightVal = baseLight * (1 + harvesterLvl * 0.3 + vanguardLightMastery) + enemy.stolenLight;
-    this.drops.push(new Drop(enemy.x, enemy.y, 'light', lightVal));
+    // Light: small drop, sometimes a big one; elites always drop big
+    const harvesterLvl = player.passives.get('lightHarvester') ?? 0;
+    const vanguardLightMastery = player.classId === 'vanguard' ? forge.getLevel('classMasteryVanguard') * 0.1 : 0;
+    const lightMult = 1 + harvesterLvl * 0.3 + vanguardLightMastery;
+    const minutes = this.survivalTime / 60;
+    if (enemy.isElite || enemy.stolenLight > 0 || Math.random() < Balance.lightDropChance(minutes)) {
+      const bigLight = enemy.isElite || Math.random() < Balance.bigLightChance;
+      const lightDrop = Drop.light(enemy.x, enemy.y, bigLight ? 'big' : 'small', lightMult);
+      lightDrop.value += enemy.stolenLight; // Leeches give back stolen light
+      this.drops.push(lightDrop);
+    }
 
-    // Chance to drop Forge Shard (currency) - Guaranteed 3-5 shards for Elites!
+    // Shards
     if (enemy.isElite) {
-      const shardBonus = 3 + Math.floor(Math.random() * 3);
-      for (let i = 0; i < shardBonus; i++) {
-        this.drops.push(new Drop(enemy.x, enemy.y, 'shard', 1));
-      }
+      if (Math.random() < 0.3) this.drops.push(Drop.shard(enemy.x, enemy.y, 'big'));
+      else this.drops.push(Drop.shard(enemy.x, enemy.y, 'small'));
       this.particles.emitShockwave(enemy.x, enemy.y, 80, '#fbbf24', 4);
     } else {
-      const greedBonus = forge.getLevel('shardGreed') * 0.08;
-      const shardChance = Math.min(0.85, 0.45 + greedBonus);
-      if (Math.random() < shardChance) {
-        this.drops.push(new Drop(enemy.x, enemy.y, 'shard', 1));
+      const greedMult = 1 + forge.getLevel('shardGreed') * 0.15;
+      if (Math.random() < Balance.bigShardChance(minutes) * greedMult) {
+        this.drops.push(Drop.shard(enemy.x, enemy.y, 'big'));
+      } else if (Math.random() < Balance.shardChance(minutes) * greedMult) {
+        this.drops.push(Drop.shard(enemy.x, enemy.y, 'small'));
       }
     }
 
-    // Splitter enemy spawns 2 small motes
+    // Splitter spawns 2 small motes (queued, added after the death sweep)
     if (enemy.type === 'splitter') {
-      const minutes = this.survivalTime / 60;
-      const hpScaling = Math.pow(1.20, minutes);
-      this.enemies.push(new Enemy(enemy.x + 12, enemy.y, 'mote', hpScaling * 0.7));
-      this.enemies.push(new Enemy(enemy.x - 12, enemy.y, 'mote', hpScaling * 0.7));
+      const hp = Balance.enemyHpScale(this.survivalTime / 60) * 0.5;
+      const dmg = Balance.enemyDamageScale(this.survivalTime / 60);
+      this.splitterQueue.push(new Enemy(enemy.x + 12, enemy.y, 'mote', hp, false, 1, dmg));
+      this.splitterQueue.push(new Enemy(enemy.x - 12, enemy.y, 'mote', hp, false, 1, dmg));
     }
 
-    // Add XP & check Level Up
-    const leveledUp = this.player.addXp(enemy.xpValue);
-    if (leveledUp) {
-      this.triggerLevelUp();
-    }
+    this.pendingLevelUps += player.addXp(enemy.xpValue);
   }
 
   private handleBossDefeat() {
     if (!this.boss) return;
-    this.boss.dropRewards(this.drops);
-    this.player.score += 2500 * this.player.scoreMultiplier;
+    const boss = this.boss;
+    boss.dropRewards(this.drops);
+    this.bossesDefeated += 1;
+    this.player.score += 2500 * boss.bossNumber * this.player.scoreMultiplier;
+    this.player.addNovaCharge(this.player.getNovaChargeNeeded()); // Boss kill fully charges the nova
+    this.particles.emitBannerText(this.player.x, this.player.y - 50, `${boss.name} BESIEGT!`, '#fbbf24');
     this.renderer.triggerScreenShake(20, 0.8);
+    haptic([100, 50, 100, 50, 150]);
+    this.pendingLevelUps += this.player.addXp(40 + boss.bossNumber * 30);
     this.boss = null;
   }
 
-  private triggerLevelUp() {
-    this.state = 'levelup';
-    const rerollBonus = forge.getLevel('fortuneReroll');
-    this.giftModal.show(this.player, this.weapons, rerollBonus, () => {
-      this.state = 'playing';
-    });
+  private updateTutorial() {
+    if (this.tutorialStep < 0) return;
+    const hints: Array<{ at: number; text: string }> = [
+      { at: 1, text: this.input.isTouchDevice ? 'Ziehe irgendwo auf dem Bildschirm, um dich zu bewegen' : 'Bewege dich mit WASD oder den Pfeiltasten' },
+      { at: 6, text: 'Deine Waffen feuern automatisch – dein Licht ist Leben UND Reichweite' },
+      { at: 12, text: 'Sammle die blauen Kristalle, sonst erlischt dein Licht' },
+      { at: 20, text: this.input.isTouchDevice ? 'DASH macht kurz unverwundbar' : 'Leertaste/Shift: Dash mit kurzer Unverwundbarkeit' },
+      { at: 30, text: 'Kills laden die SUPERNOVA – zünde sie, wenn es eng wird' }
+    ];
+    const hint = hints[this.tutorialStep];
+    if (!hint) {
+      this.tutorialStep = -1;
+      settings.set('tutorialSeen', true);
+      return;
+    }
+    if (this.survivalTime >= hint.at) {
+      this.menus.showToast(hint.text);
+      this.tutorialStep += 1;
+    }
   }
 
   private handleGameOver() {
     this.state = 'gameover';
     sound.stopAmbience();
     sound.playEnemyDeath();
+    haptic([200]);
 
-    // Persist shards to Forge & update highscores
+    const isRecord = this.survivalTime > forge.bestSurvivalTime;
     forge.addShards(this.player.shardsCollectedThisRun);
-    forge.recordRun(this.survivalTime, this.player.score);
+    forge.recordRun(this.survivalTime, this.player.score, this.bossesDefeated);
 
-    // Update Game Over Modal elements
-    const statTime = document.getElementById('stat-time');
-    const statScore = document.getElementById('stat-score');
-    const statKills = document.getElementById('stat-kills');
-    const statShards = document.getElementById('stat-shards');
-
-    const m = Math.floor(this.survivalTime / 60);
-    const s = Math.floor(this.survivalTime % 60);
-    if (statTime) statTime.textContent = `${m}:${s < 10 ? '0' : ''}${s}`;
-    if (statScore) statScore.textContent = `${Math.floor(this.player.score)}`;
-    if (statKills) statKills.textContent = `${this.player.kills}`;
-    if (statShards) statShards.textContent = `✨ ${this.player.shardsCollectedThisRun}`;
+    const set = (id: string, text: string) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = text;
+    };
+    set('stat-time', formatTime(this.survivalTime) + (isRecord ? ' ★' : ''));
+    set('stat-score', `${Math.floor(this.player.score)}`);
+    set('stat-kills', `${this.player.kills}`);
+    set('stat-shards', `✨ ${this.player.shardsCollectedThisRun}`);
+    set('stat-level', `${this.player.level}`);
+    set('stat-bosses', `${this.bossesDefeated}`);
+    set('gameover-subtitle', isRecord ? 'Neuer Rekord! Die Dunkelheit hat dich trotzdem verschlungen.' : 'Die Dunkelheit hat dich verschlungen.');
 
     this.gameoverOverlay?.classList.remove('hidden');
   }
+}
+
+export function formatTime(totalSeconds: number): string {
+  const m = Math.floor(totalSeconds / 60);
+  const s = Math.floor(totalSeconds % 60);
+  return `${m}:${s < 10 ? '0' : ''}${s}`;
+}
+
+function clampToArena(x: number, y: number, margin: number): { x: number; y: number } {
+  const maxR = Player.ARENA_RADIUS - margin;
+  const d = Math.hypot(x, y);
+  if (d <= maxR) return { x, y };
+  return { x: (x / d) * maxR, y: (y / d) * maxR };
 }

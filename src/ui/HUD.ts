@@ -48,6 +48,18 @@ export class HUD {
   private lastSupernovaOffset: string = '';
   private lastSupernovaLabel: string = '';
   private lastBossVisible: boolean = false;
+  private lastXpWidth: string = '';
+  private lightWidth: string = '';
+  private lastBossWidth: string = '';
+  private lastBossHpText: string = '';
+  private lastBossPhaseText: string = '';
+  private lastBossName: string = '';
+  private lastNovaReady: boolean | null = null;
+  private touchNovaBtn: HTMLElement | null;
+  private touchNovaFill: HTMLElement | null;
+  private touchDashBtn: HTMLElement | null;
+  private lastTouchNova: string = '';
+  private lastDashReady: boolean | null = null;
 
   constructor() {
     this.lightFill = document.getElementById('hud-light-fill');
@@ -74,22 +86,49 @@ export class HUD {
     this.gemFill = document.getElementById('hud-gem-fill');
     this.gemLevelTag = document.getElementById('hud-gem-level-tag');
     this.gemProgressText = document.getElementById('hud-gem-progress-text');
+    this.touchNovaBtn = document.getElementById('touch-nova-btn');
+    this.touchNovaFill = document.getElementById('touch-nova-fill');
+    this.touchDashBtn = document.getElementById('touch-dash-btn');
   }
 
-  public update(player: Player, survivalTime: number, boss: Boss | null, activeWeapons: Weapon[]) {
+  /** Forget cached values so a new run redraws everything. */
+  public reset() {
+    this.lastWeaponsKey = '';
+    this.lastLightText = '';
+    this.lastLightLow = null;
+    this.lastLevel = -1;
+    this.lastTimeFormatted = '';
+    this.lastPhaseName = '';
+    this.lastScoreInt = -1;
+    this.lastKillsStr = '';
+    this.lastShards = -1;
+    this.lastXpWidth = '';
+    this.lightWidth = '';
+    this.lastNovaReady = null;
+    this.lastTouchNova = '';
+    this.lastDashReady = null;
+    this.lastSupernovaLabel = '';
+    this.lastSupernovaOffset = '';
+    this.lastDashOffset = '';
+  }
+
+  public update(player: Player, survivalTime: number, boss: Boss | null, activeWeapons: Weapon[], phaseLabel: string) {
     // 1. Gem / XP Progress Bar
     const xpRatio = Math.max(0, Math.min(1, player.xp / player.xpToNextLevel));
-    if (this.gemFill) {
-      this.gemFill.style.width = `${(xpRatio * 100).toFixed(1)}%`;
-    }
-    if (this.gemProgressText) {
-      this.gemProgressText.textContent = `${player.xp} / ${player.xpToNextLevel} XP (${Math.floor(xpRatio * 100)}%)`;
+    const xpWidth = `${(xpRatio * 100).toFixed(1)}%`;
+    if (this.gemFill && xpWidth !== this.lastXpWidth) {
+      this.lastXpWidth = xpWidth;
+      this.gemFill.style.width = xpWidth;
     }
 
     // 2. Light bar
     const lightPercent = Math.max(0, Math.min(100, (player.light / player.maxLight) * 100));
     if (this.lightFill) {
-      this.lightFill.style.width = `${lightPercent.toFixed(1)}%`;
+      const lw = `${lightPercent.toFixed(1)}%`;
+      if (lw !== this.lightWidth) {
+        this.lightWidth = lw;
+        this.lightFill.style.width = lw;
+      }
       const isLow = lightPercent < 25;
       if (isLow !== this.lastLightLow) {
         this.lastLightLow = isLow;
@@ -147,19 +186,9 @@ export class HUD {
       if (this.timerText) this.timerText.textContent = timeFormatted;
     }
 
-    if (this.phaseNameText) {
-      const phaseName =
-        survivalTime < 120
-          ? 'THE FIRST DARK'
-          : survivalTime < 270
-            ? 'THE ECLIPSE'
-            : survivalTime < 450
-              ? 'THE VOID SOVEREIGN'
-              : 'THE ETERNAL ABYSS';
-      if (phaseName !== this.lastPhaseName) {
-        this.lastPhaseName = phaseName;
-        this.phaseNameText.textContent = phaseName;
-      }
+    if (this.phaseNameText && phaseLabel !== this.lastPhaseName) {
+      this.lastPhaseName = phaseLabel;
+      this.phaseNameText.textContent = phaseLabel;
     }
 
     // 5. Score, Multiplier & Kills
@@ -190,7 +219,7 @@ export class HUD {
 
     if (this.killsText) {
       const streakStr = player.comboCount >= 5 ? ` • 🔥${player.comboCount}` : '';
-      const killsStr = `${player.kills} kills${streakStr}`;
+      const killsStr = `${player.kills} Kills${streakStr}`;
       if (killsStr !== this.lastKillsStr) {
         this.lastKillsStr = killsStr;
         this.killsText.textContent = killsStr;
@@ -203,41 +232,45 @@ export class HUD {
     }
 
     // 6. Dash cooldown ring
+    const circumference = 150.8;
     if (this.dashRingProgress) {
-      const circumference = 150.8;
       const cdRatio = player.dashCooldown / player.dashMaxCooldown;
-      const offsetStr = (circumference * cdRatio).toFixed(1);
+      const offsetStr = (circumference * cdRatio).toFixed(0);
       if (offsetStr !== this.lastDashOffset) {
         this.lastDashOffset = offsetStr;
         this.dashRingProgress.style.strokeDashoffset = offsetStr;
       }
     }
+    const dashReady = player.dashCooldown <= 0;
+    if (this.touchDashBtn && dashReady !== this.lastDashReady) {
+      this.lastDashReady = dashReady;
+      this.touchDashBtn.classList.toggle('on-cooldown', !dashReady);
+    }
 
-    // 6b. Supernova (97% Light Sacrifice, 1x per 10 min) cooldown ring
+    // 6b. Supernova charge (filled by kills)
+    const novaRatio = Math.max(0, Math.min(1, player.novaCharge / player.getNovaChargeNeeded()));
     if (this.supernovaRingProgress) {
-      const circumference = 150.8;
-      const cdRatio = Math.max(0, Math.min(1, player.supernovaCooldown / player.supernovaMaxCooldown));
-      const offsetStr = (circumference * cdRatio).toFixed(1);
+      const offsetStr = (circumference * (1 - novaRatio)).toFixed(0);
       if (offsetStr !== this.lastSupernovaOffset) {
         this.lastSupernovaOffset = offsetStr;
         this.supernovaRingProgress.style.strokeDashoffset = offsetStr;
       }
     }
-    if (this.supernovaTextEl) {
-      let label = 'NOVA [R]';
-      if (player.supernovaCooldown > 0) {
-        const m = Math.floor(player.supernovaCooldown / 60);
-        const s = Math.floor(player.supernovaCooldown % 60);
-        label = `${m}:${s < 10 ? '0' : ''}${s}`;
-      }
-      if (label !== this.lastSupernovaLabel) {
-        this.lastSupernovaLabel = label;
-        this.supernovaTextEl.textContent = label;
-      }
+    const novaReady = player.isNovaReady() && player.light > 8;
+    const novaLabel = novaReady ? 'NOVA [R]' : `${Math.floor(novaRatio * 100)}%`;
+    if (this.supernovaTextEl && novaLabel !== this.lastSupernovaLabel) {
+      this.lastSupernovaLabel = novaLabel;
+      this.supernovaTextEl.textContent = novaLabel;
     }
-    if (this.supernovaIndicatorEl) {
-      const ready = player.supernovaCooldown <= 0 && player.light > 8;
-      this.supernovaIndicatorEl.classList.toggle('nova-ready', ready);
+    if (novaReady !== this.lastNovaReady) {
+      this.lastNovaReady = novaReady;
+      this.supernovaIndicatorEl?.classList.toggle('nova-ready', novaReady);
+      this.touchNovaBtn?.classList.toggle('nova-ready', novaReady);
+    }
+    const touchFill = `${(novaRatio * 100).toFixed(0)}%`;
+    if (this.touchNovaFill && touchFill !== this.lastTouchNova) {
+      this.lastTouchNova = touchFill;
+      this.touchNovaFill.style.height = touchFill;
     }
 
     // 7. Boss Health Bar
@@ -246,16 +279,37 @@ export class HUD {
         this.lastBossVisible = true;
         if (this.bossBarContainer) this.bossBarContainer.classList.remove('hidden');
       }
-      if (this.bossNameText) this.bossNameText.textContent = boss.name;
-      if (this.bossPhaseText) this.bossPhaseText.textContent = `PHASE ${boss.phase} / ${boss.maxPhases}`;
-      if (this.bossHpNumbers) this.bossHpNumbers.textContent = `${Math.max(0, Math.ceil(boss.hp))} / ${boss.maxHp} HP`;
-      if (this.bossBarFill) {
-        const hpPercent = Math.max(0, Math.min(100, (boss.hp / boss.maxHp) * 100));
-        this.bossBarFill.style.width = `${hpPercent.toFixed(1)}%`;
+      const name = `BOSS ${boss.bossNumber} • ${boss.name}`;
+      if (this.bossNameText && name !== this.lastBossName) {
+        this.lastBossName = name;
+        this.bossNameText.textContent = name;
+      }
+      const phaseStr = `PHASE ${boss.phase} / ${boss.maxPhases}`;
+      if (this.bossPhaseText && phaseStr !== this.lastBossPhaseText) {
+        this.lastBossPhaseText = phaseStr;
+        this.bossPhaseText.textContent = phaseStr;
+      }
+      const hpStr = `${formatBig(Math.max(0, Math.ceil(boss.hp)))} / ${formatBig(boss.maxHp)} HP`;
+      if (this.bossHpNumbers && hpStr !== this.lastBossHpText) {
+        this.lastBossHpText = hpStr;
+        this.bossHpNumbers.textContent = hpStr;
+      }
+      const hpPercent = Math.max(0, Math.min(100, (boss.hp / boss.maxHp) * 100));
+      const bw = `${hpPercent.toFixed(1)}%`;
+      if (this.bossBarFill && bw !== this.lastBossWidth) {
+        this.lastBossWidth = bw;
+        this.bossBarFill.style.width = bw;
       }
     } else if (this.lastBossVisible) {
       this.lastBossVisible = false;
       if (this.bossBarContainer) this.bossBarContainer.classList.add('hidden');
     }
   }
+}
+
+/** 1234567 -> "1.23M", 45600 -> "45.6k" */
+function formatBig(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 10_000) return `${(n / 1000).toFixed(1)}k`;
+  return `${n}`;
 }

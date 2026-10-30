@@ -24,6 +24,9 @@ export interface PlayerProjectile {
   spawnsSolarZone?: boolean; // For Flare solar burn zone on hit/expiry
   bypassesShield?: boolean; // For Needles 4th-shot crit needle
   staggerStrength?: number;
+  /** Visual style: 'orb' (default), 'star' (Sparks), 'needle', 'shell' (Flare). */
+  shape?: 'orb' | 'star' | 'needle' | 'shell';
+  spin?: number;
 }
 
 export abstract class Weapon {

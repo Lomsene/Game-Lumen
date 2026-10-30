@@ -69,6 +69,8 @@ export interface SolarBurnZone {
 }
 
 export class Enemy {
+  /** Render detail set by the renderer: 2 = full, 1 = no trails, 0 = no trails & halos. */
+  static detail: number = 2;
   public x: number;
   public y: number;
   public vx: number = 0;
@@ -102,6 +104,15 @@ export class Enemy {
   public stolenLight: number = 0;
   public slowTimer: number = 0;
 
+  // Death is resolved once by the game loop (prevents double rewards / explosions)
+  public dead: boolean = false;
+  // Knockback is kept separate from AI velocity so it is not overwritten every frame
+  public knockVx: number = 0;
+  public knockVy: number = 0;
+  // Continuous damage (beams, auras, burn) is summed up into readable numbers
+  private pendingTickDmg: number = 0;
+  private tickTextTimer: number = 0;
+
   // Visuals & Smooth Motion Animation
   public rotation: number = 0;
   public targetRotation: number = 0;
@@ -113,7 +124,15 @@ export class Enemy {
   public animPhase: number = Math.random() * Math.PI * 2;
   public bankAngle: number = 0;
 
-  constructor(x: number, y: number, type: EnemyType, hpScaling: number = 1.0, isElite: boolean = false, speedScaling: number = 1.0) {
+  constructor(
+    x: number,
+    y: number,
+    type: EnemyType,
+    hpScaling: number = 1.0,
+    isElite: boolean = false,
+    speedScaling: number = 1.0,
+    damageScaling: number = 1.0
+  ) {
     this.x = x;
     this.y = y;
     this.type = type;
@@ -262,10 +281,28 @@ export class Enemy {
       this.xpValue *= 3;
     }
 
+    this.damage *= damageScaling;
     this.hp = this.maxHp;
   }
 
-  public takeDamage(amount: number, particles: ParticleSystem, hitOrigin?: { x: number; y: number }, isCrit: boolean = false): boolean {
+  public applyKnockback(kx: number, ky: number) {
+    const resist = this.type === 'behemoth' ? 0.3 : this.isElite ? 0.55 : 1;
+    this.knockVx += kx * resist;
+    this.knockVy += ky * resist;
+  }
+
+  /**
+   * Applies damage. Returns true only on the hit that kills the enemy.
+   * `isTick` marks continuous damage (beams/auras/burn): no sparks, numbers are batched.
+   */
+  public takeDamage(
+    amount: number,
+    particles: ParticleSystem,
+    hitOrigin?: { x: number; y: number },
+    isCrit: boolean = false,
+    isTick: boolean = false
+  ): boolean {
+    if (this.dead) return false;
     let effectiveDmg = amount;
 
     // Vanguard frontal shield deflection
@@ -274,23 +311,31 @@ export class Enemy {
       const angleDiff = Math.abs(Math.atan2(Math.sin(hitAngle - this.rotation), Math.cos(hitAngle - this.rotation)));
       if (angleDiff < Math.PI * 0.45) {
         effectiveDmg *= 0.2; // 80% deflection on frontal hits!
-        particles.emitSpark(this.x, this.y, '#06b6d4', 6);
+        if (!isTick) particles.emitSpark(this.x, this.y, '#06b6d4', 4);
       }
     }
 
     this.hp -= effectiveDmg;
     this.hitFlashTimer = 0.1;
-    particles.emitSpark(this.x, this.y, isCrit ? '#fbbf24' : '#ffffff', isCrit ? 7 : 4);
-    if (effectiveDmg >= 2) {
-      particles.emitDamageText(this.x, this.y - this.radius, effectiveDmg, isCrit);
+    if (isTick) {
+      this.pendingTickDmg += effectiveDmg;
+    } else {
+      particles.emitSpark(this.x, this.y, isCrit ? '#fbbf24' : '#ffffff', isCrit ? 5 : 3);
+      if (effectiveDmg >= 2) {
+        particles.emitDamageText(this.x, this.y - this.radius, effectiveDmg, isCrit);
+      }
     }
 
-    if (this.hp <= 0) {
-      sound.playEnemyDeath();
-      particles.emitExplosion(this.x, this.y, this.color, this.isElite ? 35 : 18);
-      return true; // Defeated
-    }
-    return false;
+    return this.checkDeath(particles);
+  }
+
+  /** Marks the enemy dead once HP hits zero. Returns true exactly once. */
+  public checkDeath(particles: ParticleSystem): boolean {
+    if (this.dead || this.hp > 0) return false;
+    this.dead = true;
+    sound.playEnemyDeath();
+    particles.emitExplosion(this.x, this.y, this.color, this.isElite ? 28 : 12);
+    return true;
   }
 
   public update(
@@ -299,24 +344,34 @@ export class Enemy {
     projectiles: EnemyProjectile[],
     mortarZones: MortarZone[],
     particles: ParticleSystem,
-    projectileSpeedBonus: number = 1.0
+    projectileSpeedBonus: number = 1.0,
+    lightRadius: number = player.getLightRadius()
   ): void {
     this.timer += dt;
     this.floatZ = Math.sin(this.timer * 4.5 + this.x * 0.05) * 2.8;
     if (this.hitFlashTimer > 0) this.hitFlashTimer -= dt;
 
+    // Flush batched tick damage as one readable number
+    this.tickTextTimer += dt;
+    if (this.tickTextTimer >= 0.35) {
+      if (this.pendingTickDmg >= 1) {
+        particles.emitDamageText(this.x, this.y - this.radius, this.pendingTickDmg, false);
+      }
+      this.pendingTickDmg = 0;
+      this.tickTextTimer = 0;
+    }
+
     const dx = player.x - this.x;
     const dy = player.y - this.y;
-    const dist = Math.hypot(dx, dy);
+    const dist = Math.hypot(dx, dy) || 0.001;
 
     // Light illumination check (inside light = weapon range & illuminated bloom)
-    const lightRadius = player.getLightRadius();
     this.isIlluminated = dist <= lightRadius + 15;
 
-    // Phosphor Coat burn
+    // Phosphor Coat burn (scales with weapon damage multiplier so it stays relevant)
     const phosphorLvl = player.passives.get('phosphorCoat') ?? 0;
     if (this.isIlluminated && phosphorLvl > 0) {
-      this.hp -= phosphorLvl * 6 * dt;
+      this.takeDamage(phosphorLvl * 6 * dt * player.getDamageMultiplier(), particles, undefined, false, true);
     }
 
     // AI logic by archetype
@@ -537,8 +592,11 @@ export class Enemy {
     const moveMult = this.slowTimer > 0 ? 0.62 : 1.0;
     if (this.slowTimer > 0) this.slowTimer -= dt;
 
-    this.x += this.vx * moveMult * dt;
-    this.y += this.vy * moveMult * dt;
+    this.x += (this.vx * moveMult + this.knockVx) * dt;
+    this.y += (this.vy * moveMult + this.knockVy) * dt;
+    const knockDecay = Math.pow(0.002, dt);
+    this.knockVx *= knockDecay;
+    this.knockVy *= knockDecay;
 
     // Smooth angular rotation & banking animation
     const speed = Math.hypot(this.vx, this.vy);
@@ -625,7 +683,7 @@ export class Enemy {
     }
 
     // 3. Motion Afterimage Trail
-    if (this.trailHistory.length > 2) {
+    if (Enemy.detail >= 2 && this.trailHistory.length > 2) {
       ctx.save();
       for (let i = 1; i < this.trailHistory.length; i++) {
         const pt = this.trailHistory[i];
@@ -721,15 +779,17 @@ export class Enemy {
 
     ctx.save();
 
-    // Fast outer halo glow circle (replaces slow Gaussian shadowBlur!)
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.fillStyle = baseColor;
-    ctx.globalAlpha = isLit ? 0.16 : 0.08;
-    ctx.beginPath();
-    ctx.arc(0, 0, r * 1.45, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
+    // Fast outer halo glow circle (skipped on low quality)
+    if (Enemy.detail >= 1) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = baseColor;
+      ctx.globalAlpha = isLit ? 0.16 : 0.08;
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 1.45, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
 
     if (isLit) {
       ctx.fillStyle = isFlashing ? '#ffffff' : 'rgba(244, 63, 94, 0.22)';

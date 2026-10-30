@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Android build artifacts
+android-apk/node_modules/
+android-apk/*.apk
+android-apk/android/.gradle/
+android-apk/android/app/build/
+android-apk/android/build/
+android-apk/android/local.properties
+android-apk/android/app/src/main/assets/public/
+
+# Editor / OS
+.vscode/
+.idea/
+*.log
+.DS_Store
+Thumbs.db

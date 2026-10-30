@@ -3,7 +3,7 @@ echo ===================================================
 echo   AETHER: ECLIPSE - ANDROID APK BUILDER (LANDSCAPE)
 echo ===================================================
 cd /d "%~dp0\.."
-echo [1/3] Baue Web-App (Vite)...
+echo [1/3] Pruefe Typen und baue Web-App (Vite)...
 call npm run build
 if %errorlevel% neq 0 exit /b %errorlevel%
 
