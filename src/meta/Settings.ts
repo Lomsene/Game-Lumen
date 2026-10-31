@@ -5,6 +5,8 @@ import { storage } from '../engine/Storage';
  */
 export type QualityLevel = 'auto' | 'high' | 'medium' | 'low';
 export type JoystickMode = 'floating' | 'fixed';
+/** Frame-rate limit; 0 = follow the display refresh rate. */
+export type FpsCap = 0 | 30 | 60;
 
 export interface SettingsData {
   musicVolume: number; // 0..1
@@ -15,10 +17,15 @@ export interface SettingsData {
   screenShake: boolean;
   damageNumbers: boolean;
   showFps: boolean;
+  fpsCap: FpsCap;
   joystickMode: JoystickMode;
   leftHanded: boolean;
   tutorialSeen: boolean;
 }
+
+// Phones default to 60 FPS: on 90/120 Hz screens rendering every refresh doubles GPU load,
+// drains the battery and leads to thermal throttling after a few minutes.
+const IS_TOUCH_DEVICE = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches;
 
 const DEFAULTS: SettingsData = {
   musicVolume: 0.6,
@@ -29,6 +36,7 @@ const DEFAULTS: SettingsData = {
   screenShake: true,
   damageNumbers: true,
   showFps: false,
+  fpsCap: IS_TOUCH_DEVICE ? 60 : 0,
   joystickMode: 'floating',
   leftHanded: false,
   tutorialSeen: false

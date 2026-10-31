@@ -26,24 +26,31 @@ Die teuersten Posten auf dem Handy, geschätzt:
 
 ---
 
-## Phase 0 – Messen (½ Tag)
+## Phase 0 – Messen ✅ erledigt
 
-- [ ] **Perf-Overlay** erweitern (aktuell nur FPS): Simulation (ms), Canvas2D-Rendern (ms), PostFX (ms), Anzahl von Gegnern, Projektilen, Partikeln und Lichtern.
-  GPU-Zeit über `EXT_disjoint_timer_query_webgl2`, falls verfügbar.
-- [ ] **Benchmark-Modus** per URL-Parameter (`?bench=1`): fester Seed, 5 Minuten Spielzeit simuliert, 300 Gegner, Boss aktiv.
-  Ergebnis: durchschnittliche und 1-%-Low-Frametime. So lässt sich jede Änderung vergleichen.
-- [ ] Messung auf einem **Mittelklasse-Android** (z. B. Snapdragon 6xx / Helio G) per Chrome Remote Debugging (`chrome://inspect`), Performance-Tab.
+- [x] **Perf-Overlay** (Einstellungen → „FPS anzeigen“):
+  `FPS + Frametime | Sim / Draw / FX (ms) | Qualität, Szenen-Skalierung @Szenen-DPR | Gegner, Partikel, Lichter`.
+  Wird nur 4× pro Sekunde ins DOM geschrieben.
+- [x] **Benchmark-Modus** `?bench=1` (`src/engine/Benchmark.ts`): Alle 4 Waffenslots sind maximiert,
+  die Schwierigkeit entspricht Minute 5, ~140 Gegner werden laufend nachgefüllt, der Spieler ist unverwundbar,
+  und es gibt keine Level-up-Unterbrechungen. Nach 3 s Aufwärmen werden 30 s gemessen.
+  Das Ergebnis erscheint im Game-Over-Untertitel, in der Konsole (`[AETHER bench]`) und als `window.__AETHER_BENCH__`.
+  **Ändert keine Spielstände, Rekorde oder Erfolge.**
+- [ ] Offen: GPU-Zeit per `EXT_disjoint_timer_query_webgl2`. Ein fester Zufalls-Seed fehlt ebenfalls (die Gegneranzahl ist fix,
+  deshalb sind die Läufe trotzdem gut vergleichbar).
+- [ ] **Messung auf einem echten Mittelklasse-Android** steht noch aus. Ablauf: APK bauen, App mit `?bench=1` starten,
+  bzw. im Browser `http://<PC-IP>:5173/?bench=1` öffnen und per `chrome://inspect` mitschauen.
 
-## Phase 1 – Quick Wins: größter Effekt, geringes Risiko (1–2 Tage)
+## Phase 1 – Quick Wins ✅ erledigt
 
-| # | Maßnahme | Wo | Erwarteter Effekt |
-|---|---|---|---|
-| 1 | **Szenen-Auflösung von der Anzeige trennen**: `sceneCanvas` mit eigenem `renderScale` (Handy 1.0–1.25 statt bis 2.0). Overlay-Text bleibt in nativer DPR und damit scharf. Der Composite-Shader skaliert ohnehin. | `Renderer.resize`, `QUALITY` | ~40–60 % weniger Pixel für Canvas2D, Upload und Bloom |
-| 2 | **Dynamische Auflösung statt 3 harter Stufen**: `renderScale` stufenlos 0.6–1.0 anhand der Frametime regeln. Heute löst jede Stufe `resize()` aus (Sterne, Vignette und Render-Targets werden neu gebaut) und verursacht einen Ruckler. | `reportFrameTime` | Gleichmäßige FPS, keine Qualitätssprünge |
-| 3 | **FPS-Limit-Einstellung** (30 / 60 / unbegrenzt), Standard auf dem Handy 60. Die Schwellen der Auto-Qualität (21 ms / 12,5 ms) sind auf 60 Hz ausgelegt. | `Game.loop`, `Settings` | Halbe GPU-Last auf 120-Hz-Geräten, weniger Hitze |
-| 4 | **Licht-Budget pro Qualitätsstufe** (150 / 300 / 600 statt 900), kleine und schwache Lichter zuerst verwerfen, `lightScale` auf high von 0.5 auf 0.35 | `collectLights`, `QUALITY` | Weniger Overdraw in Massenkämpfen |
-| 5 | **Allokationen im Hot Path entfernen**: `enemyProjectiles.filter()` pro Frame (`Game.ts`), Font-String pro Text (`Particle.ts`), `lit ? [] : this.stars` (neues Array pro Frame), `bind`-Closure und Map-Lookups für Uniforms in `PostFX.render` | diverse | Weniger GC-Hänger (Mikroruckler) |
-| 6 | **HUD-Balken per `transform: scaleX()`** statt `style.width` | `HUD.ts` | Keine Layout-Berechnung pro Frame |
+| # | Maßnahme | Status |
+|---|---|---|
+| 1 | **Szenen-Auflösung getrennt**: Die beleuchtete Szene rendert mit `sceneDprCap` (1.5 / 1.25 / 1.0), der Text-Overlay bleibt bei bis zu 2.0. Gemessen bei emulierter DPR 2.625 im Querformat: Szene 1373×618 statt 1830×824, also **−44 % Pixel** für Canvas2D, Upload, Licht und Bloom. | ✅ |
+| 2 | **Dynamische Auflösung**: Bei „Auto“ sinkt zuerst die Szenen-Skalierung in Schritten von 10 % bis 60 %, erst danach die Effektstufe. Hochgestuft wird anhand der **CPU-Arbeitszeit**. Vorher konnte „Auto“ auf 60-Hz-Displays nie wieder hochstufen, weil die Frametime durch VSync nie unter 12,5 ms fällt. Ein Skalierungsschritt passt nur die Canvas-Größen an, ohne Sterne und Vignette neu zu bauen. | ✅ |
+| 3 | **FPS-Limit** in den Einstellungen (60 / 30 / unbegrenzt), Standard auf Touch-Geräten 60. Das Pacing liefert auf 60/90/120 Hz gleichmäßig 60. | ✅ |
+| 4 | **Licht-Budget** 600 / 300 / 150 und `lightScale` 0.4 / 0.33 / 0.25. Die Lichter werden **nach Priorität** gesammelt: Spieler → Boss → große Explosionen → Zonen → Waffen → Schüsse → Gegner → Drops → kleine Treffer-Blitze. | ✅ |
+| 5 | Allokationen: Font-String-Cache für Schadenszahlen, kein Wegwerf-Array für Sterne pro Frame. *Korrektur zur Analyse:* Das `filter()` in `Game.ts` läuft nur beim Dash, nicht pro Frame. Die Uniform-Lookups in PostFX sind bereits gecacht und vernachlässigbar. | ✅ |
+| 6 | **HUD-Balken per `transform: scaleX()`** statt `width` | ✅ |
 
 ## Phase 2 – Render-Architektur (3–6 Tage)
 
@@ -78,4 +85,4 @@ Die teuersten Posten auf dem Handy, geschätzt:
 
 ## Empfohlene Reihenfolge
 
-Phase 0 → Phase 1 (#1, #3, #2) → messen → Phase 2 #7 → Phase 3 nach Lust und Laune → Phase 2 #10 nur bei Bedarf.
+~~Phase 0 → Phase 1~~ → **auf dem Handy messen** → Phase 2 #7 → Phase 3 nach Lust und Laune → Phase 2 #10 nur bei Bedarf.

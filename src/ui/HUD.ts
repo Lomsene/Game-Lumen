@@ -115,19 +115,20 @@ export class HUD {
   public update(player: Player, survivalTime: number, boss: Boss | null, activeWeapons: Weapon[], phaseLabel: string) {
     // 1. Gem / XP Progress Bar
     const xpRatio = Math.max(0, Math.min(1, player.xp / player.xpToNextLevel));
-    const xpWidth = `${(xpRatio * 100).toFixed(1)}%`;
+    // Bars scale on the compositor (transform) instead of changing width, which would re-run layout
+    const xpWidth = `scaleX(${xpRatio.toFixed(3)})`;
     if (this.gemFill && xpWidth !== this.lastXpWidth) {
       this.lastXpWidth = xpWidth;
-      this.gemFill.style.width = xpWidth;
+      this.gemFill.style.transform = xpWidth;
     }
 
     // 2. Light bar
     const lightPercent = Math.max(0, Math.min(100, (player.light / player.maxLight) * 100));
     if (this.lightFill) {
-      const lw = `${lightPercent.toFixed(1)}%`;
+      const lw = `scaleX(${(lightPercent / 100).toFixed(3)})`;
       if (lw !== this.lightWidth) {
         this.lightWidth = lw;
-        this.lightFill.style.width = lw;
+        this.lightFill.style.transform = lw;
       }
       const isLow = lightPercent < 25;
       if (isLow !== this.lastLightLow) {
@@ -295,10 +296,10 @@ export class HUD {
         this.bossHpNumbers.textContent = hpStr;
       }
       const hpPercent = Math.max(0, Math.min(100, (boss.hp / boss.maxHp) * 100));
-      const bw = `${hpPercent.toFixed(1)}%`;
+      const bw = `scaleX(${(hpPercent / 100).toFixed(3)})`;
       if (this.bossBarFill && bw !== this.lastBossWidth) {
         this.lastBossWidth = bw;
-        this.bossBarFill.style.width = bw;
+        this.bossBarFill.style.transform = bw;
       }
     } else if (this.lastBossVisible) {
       this.lastBossVisible = false;

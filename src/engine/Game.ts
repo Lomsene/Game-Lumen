@@ -4,7 +4,7 @@ import { Boss, BossSpawnRequests } from '../entities/Boss';
 import { Drop } from '../entities/Drop';
 import { Weapon, PlayerProjectile } from '../weapons/Weapon';
 import { OrbitersWeapon } from '../weapons/WeaponRegistry';
-import { createWeapon } from '../upgrades/UpgradePool';
+import { createWeapon, ALL_WEAPON_CLASSES } from '../upgrades/UpgradePool';
 import { ParticleSystem } from './Particle';
 import { GameRenderer } from './Renderer';
 import { InputManager } from './Input';
@@ -21,6 +21,16 @@ import { runStats, SOURCE_LABELS } from '../meta/RunStats';
 import { achievements, AchievementDef, ACHIEVEMENTS } from '../meta/Achievements';
 import { PASSIVE_UPGRADES } from '../upgrades/UpgradePool';
 import { AchievementsModal } from '../ui/AchievementsModal';
+import {
+  BENCH_ENABLED,
+  BENCH_WARMUP,
+  BENCH_DURATION,
+  BENCH_ENEMY_TARGET,
+  BENCH_SURVIVAL_TIME,
+  BenchResult,
+  FrameRecorder,
+  PerfMonitor
+} from './Benchmark';
 
 export type GameState = 'menu' | 'playing' | 'paused' | 'levelup' | 'gameover';
 
@@ -70,6 +80,13 @@ export class Game {
   private swarmEventTimer: number = 0;
   private riftSpawnTimer: number = 0;
   private lastTime: number = 0;
+  /** FPS cap pacing: earliest timestamp for the next rendered frame. */
+  private nextFrameAt: number = 0;
+  /** CPU time (simulation + render) of the previous frame, for the auto-quality headroom check. */
+  private lastWorkMs: number = 0;
+  private perf = new PerfMonitor();
+  private benchRecorder = new FrameRecorder();
+  private benchTime: number = 0;
   /** Frames rendered since the game stopped simulating (menus/pause only need one). */
   private staticFrames: number = 0;
 
@@ -274,6 +291,7 @@ export class Game {
     this.achievementCheckTimer = 0;
     this.runAchievements = [];
     runStats.reset();
+    if (BENCH_ENABLED) this.setupBenchmark();
 
     this.renderer.cameraX = this.player.x - this.renderer.viewWidth / 2;
     this.renderer.cameraY = this.player.y - this.renderer.viewHeight / 2;
@@ -317,12 +335,25 @@ export class Game {
   }
 
   private loop(timestamp: number) {
+    // FPS cap: on 90/120 Hz screens skip display refreshes instead of rendering every one
+    const cap = settings.data.fpsCap;
+    if (cap > 0) {
+      if (timestamp < this.nextFrameAt - 1) {
+        requestAnimationFrame((t) => this.loop(t));
+        return;
+      }
+      const interval = 1000 / cap;
+      this.nextFrameAt = Math.max(this.nextFrameAt + interval, timestamp + interval * 0.5);
+    }
+
     const frameMs = timestamp - this.lastTime;
     this.lastTime = timestamp;
     const frameDt = Math.min(frameMs / 1000, 0.1);
+    const simStart = performance.now();
 
     if (this.state === 'playing') {
-      this.renderer.reportFrameTime(frameMs);
+      this.renderer.reportFrameTime(frameMs, this.lastWorkMs, cap > 0 ? 1000 / cap : 1000 / 60);
+      if (BENCH_ENABLED) this.updateBenchmark(frameMs, frameDt);
       this.staticFrames = 0;
       const steps = Math.min(MAX_STEPS_PER_FRAME, Math.max(1, Math.ceil(frameDt / MAX_STEP - 1e-6)));
       const stepDt = Math.min(frameDt, MAX_STEP * MAX_STEPS_PER_FRAME) / steps;
@@ -330,6 +361,7 @@ export class Game {
         this.update(stepDt);
       }
       this.hud.update(this.player, this.survivalTime, this.boss, this.weapons, this.getPhaseLabel());
+      if (BENCH_ENABLED) this.pendingLevelUps = 0; // XP from this frame must not open the gift modal
       this.processLevelUpQueue();
     } else if (this.state === 'menu' && this.renderer.lightingActive) {
       // Living menu backdrop: drifting nebula and the idle player orb
@@ -344,6 +376,7 @@ export class Game {
       return;
     }
 
+    const renderStart = performance.now();
     this.renderer.render(
       frameDt,
       this.player,
@@ -360,8 +393,20 @@ export class Game {
       this.solarZones
     );
 
-    if (this.fpsEl && settings.data.showFps) {
-      this.fpsEl.textContent = `${Math.round(this.renderer.fps)} FPS • ${this.renderer.quality.toUpperCase()} • ${this.enemies.length} E • ${this.particles.particles.length} P`;
+    const now = performance.now();
+    const simMs = renderStart - simStart;
+    const renderMs = now - renderStart;
+    this.lastWorkMs = simMs + renderMs;
+    this.perf.record(simMs, renderMs);
+
+    if (this.fpsEl && settings.data.showFps && this.perf.shouldUpdateText(now)) {
+      const r = this.renderer;
+      const fxMs = r.lightingActive ? r.stats.fxMs : 0;
+      this.fpsEl.textContent =
+        `${Math.round(r.fps)} FPS ${(1000 / r.fps).toFixed(1)}ms | ` +
+        `Sim ${this.perf.simMs.toFixed(1)} Draw ${Math.max(0, this.perf.renderMs - fxMs).toFixed(1)} FX ${fxMs.toFixed(1)} | ` +
+        `${r.quality.toUpperCase()} ${Math.round(r.sceneScale * 100)}% @${r.sceneDpr.toFixed(2)}x | ` +
+        `E ${this.enemies.length} P ${this.particles.particles.length} L ${r.stats.lights}`;
     }
 
     requestAnimationFrame((t) => this.loop(t));
@@ -527,7 +572,60 @@ export class Game {
     this.achievementCheckTimer += dt;
     if (this.achievementCheckTimer >= 1) {
       this.achievementCheckTimer = 0;
-      this.announceAchievements(achievements.evaluate(this.survivalTime, player, this.weapons, player.kills));
+      if (!BENCH_ENABLED) this.announceAchievements(achievements.evaluate(this.survivalTime, player, this.weapons, player.kills));
+    }
+  }
+
+  /** ?bench=1: every weapon slot maxed, 5-minute difficulty, no level-up interruptions. */
+  private setupBenchmark() {
+    this.tutorialStep = -1;
+    this.pendingStartGifts = 0;
+    this.survivalTime = BENCH_SURVIVAL_TIME;
+    this.bossFreeTimer = 0;
+    const ids = new Set(this.weapons.map((w) => w.id));
+    for (const WeaponClass of ALL_WEAPON_CLASSES) {
+      if (this.weapons.length >= 4) break;
+      const w = new WeaponClass();
+      if (!ids.has(w.id)) this.weapons.push(w);
+    }
+    for (const w of this.weapons) {
+      for (let i = 0; i < 10; i++) w.upgrade();
+    }
+    this.benchTime = 0;
+    this.benchRecorder.reset();
+  }
+
+  /** Keeps the horde topped up, keeps the player alive and records frame times. */
+  private updateBenchmark(frameMs: number, dt: number) {
+    const player = this.player;
+    player.light = player.maxLight;
+
+    const types: EnemyType[] = ['mote', 'stalker', 'charger', 'spitter', 'vanguard', 'phantom'];
+    const minutes = BENCH_SURVIVAL_TIME / 60;
+    const missing = Math.min(10, BENCH_ENEMY_TARGET - this.enemies.length);
+    for (let i = 0; i < missing; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const d = 320 + Math.random() * 260;
+      const n = this.enemies.length;
+      this.addEnemy(player.x + Math.cos(a) * d, player.y + Math.sin(a) * d, types[n % types.length], Balance.enemyHpScale(minutes), n % 25 === 0);
+    }
+
+    this.benchTime += dt;
+    if (this.benchTime > BENCH_WARMUP) this.benchRecorder.add(frameMs);
+    if (this.benchTime >= BENCH_WARMUP + BENCH_DURATION) this.finishBenchmark();
+  }
+
+  private finishBenchmark() {
+    const r = this.renderer;
+    const result: BenchResult = { ...this.benchRecorder.summary(), quality: r.quality, sceneScale: r.sceneScale, sceneDpr: r.sceneDpr };
+    console.info('[AETHER bench]', result);
+    (window as unknown as { __AETHER_BENCH__: BenchResult }).__AETHER_BENCH__ = result;
+    this.quitRun();
+    const sub = document.getElementById('gameover-subtitle');
+    if (sub) {
+      sub.textContent =
+        `BENCHMARK • Ø ${result.avgMs.toFixed(1)} ms (${Math.round(result.avgFps)} FPS) • ` +
+        `1% Low ${result.p99Ms.toFixed(1)} ms • ${result.quality.toUpperCase()} ${Math.round(result.sceneScale * 100)}%`;
     }
   }
 
@@ -1178,11 +1276,14 @@ export class Game {
     sound.playEnemyDeath();
     haptic([200]);
 
-    const isRecord = this.survivalTime > forge.bestSurvivalTime;
-    forge.addShards(this.player.shardsCollectedThisRun);
-    const record = forge.recordRun(this.survivalTime, this.player.score, this.bossesDefeated, this.player.kills, this.player.classId);
-    this.announceAchievements(achievements.finishRun(this.survivalTime, this.player, this.weapons));
-    this.renderRunDetails(record.rank);
+    const isRecord = !BENCH_ENABLED && this.survivalTime > forge.bestSurvivalTime;
+    let rank = 0;
+    if (!BENCH_ENABLED) {
+      forge.addShards(this.player.shardsCollectedThisRun);
+      rank = forge.recordRun(this.survivalTime, this.player.score, this.bossesDefeated, this.player.kills, this.player.classId).rank;
+      this.announceAchievements(achievements.finishRun(this.survivalTime, this.player, this.weapons));
+    }
+    this.renderRunDetails(rank);
 
     const set = (id: string, text: string) => {
       const el = document.getElementById(id);

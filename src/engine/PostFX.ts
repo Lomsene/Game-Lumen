@@ -38,11 +38,14 @@ export interface FxProfile {
 export class LightBuffer {
   public static readonly STRIDE = 7;
   public readonly capacity: number;
+  /** Per-quality budget (<= capacity); later pushes are dropped, so push in priority order. */
+  public limit: number;
   public data: Float32Array;
   public count: number = 0;
 
   constructor(capacity: number) {
     this.capacity = capacity;
+    this.limit = capacity;
     this.data = new Float32Array(capacity * LightBuffer.STRIDE);
   }
 
@@ -51,7 +54,7 @@ export class LightBuffer {
   }
 
   public push(x: number, y: number, radius: number, rgb: readonly number[], intensity: number) {
-    if (this.count >= this.capacity || intensity <= 0.003 || radius < 2) return;
+    if (this.count >= this.limit || intensity <= 0.003 || radius < 2) return;
     const o = this.count * LightBuffer.STRIDE;
     const d = this.data;
     d[o] = x;

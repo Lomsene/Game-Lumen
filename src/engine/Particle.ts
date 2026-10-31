@@ -42,6 +42,18 @@ export interface FloatingText {
   isCrit: boolean;
 }
 
+const fontCache = new Map<number, string>();
+
+/** Cached font strings: building one per floating text every frame churns the GC. */
+function textFont(size: number): string {
+  let f = fontCache.get(size);
+  if (!f) {
+    f = `800 ${size}px "JetBrains Mono", monospace`;
+    fontCache.set(size, f);
+  }
+  return f;
+}
+
 export class ParticleSystem {
   public particles: Particle[] = [];
   public shockwaves: Shockwave[] = [];
@@ -183,7 +195,7 @@ export class ParticleSystem {
         const progress = ft.life / ft.maxLife;
         const alpha = progress < 0.7 ? 1 : 1 - (progress - 0.7) / 0.3;
         ctx.globalAlpha = Math.max(0, alpha);
-        const font = `800 ${ft.size}px "JetBrains Mono", monospace`;
+        const font = textFont(ft.size);
         if (font !== currentFont) {
           ctx.font = font;
           currentFont = font;

@@ -157,7 +157,8 @@ html, body {
   background: linear-gradient(90deg, #ec4899 0%, #f43f5e 50%, #ffffff 100%);
   box-shadow: 0 0 18px #f43f5e;
   border-radius: 5px;
-  transition: width 0.15s ease-out;
+  transform-origin: left center;
+  transition: transform 0.15s ease-out;
 }
 
 /* Top HUD Container */
@@ -222,7 +223,8 @@ html, body {
   background: linear-gradient(90deg, #00d2ff 0%, #38bdf8 65%, #ffffff 100%);
   box-shadow: 0 0 12px rgba(56, 189, 248, 0.8);
   border-radius: 999px;
-  transition: width 0.1s linear, background-color 0.3s ease;
+  transform-origin: left center;
+  transition: transform 0.1s linear, background-color 0.3s ease;
 }
 
 .hud-light-value {
@@ -332,12 +334,14 @@ html, body {
 }
 
 .hud-xp-fill {
-  width: 0%;
+  width: 100%;
+  transform: scaleX(0);
+  transform-origin: left center;
   height: 100%;
   background: linear-gradient(90deg, #0284c7 0%, #00f3ff 80%, #ffffff 100%);
   box-shadow: 0 0 8px rgba(0, 243, 255, 0.8), 0 0 2px #ffffff;
   border-radius: 1px;
-  transition: width 0.12s linear;
+  transition: transform 0.12s linear;
 }
 
 .hud-xp-sub-row {

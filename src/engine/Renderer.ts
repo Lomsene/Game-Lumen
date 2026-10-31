@@ -13,7 +13,13 @@ import { PLAYER_SKINS } from '../meta/Forge';
 type ConcreteQuality = Exclude<QualityLevel, 'auto'>;
 
 interface QualityProfile {
+  /** Overlay (floating text) resolution cap - stays sharp. */
   dprCap: number;
+  /** Lit scene resolution cap. The scene passes through lighting + bloom, so it can render
+   *  well below the display resolution without visibly softening - the biggest single saving on phones. */
+  sceneDprCap: number;
+  /** Max lights per frame in the WebGL light map. */
+  lightBudget: number;
   maxParticles: number;
   density: number;
   stars: number;
@@ -23,9 +29,9 @@ interface QualityProfile {
 }
 
 const QUALITY: Record<ConcreteQuality, QualityProfile> = {
-  high: { dprCap: 2.0, maxParticles: 900, density: 1, stars: 240, nebulas: true, glows: true, fx: { lightScale: 0.5, wideBloom: true, bloomStrength: 1 } },
-  medium: { dprCap: 1.6, maxParticles: 600, density: 0.8, stars: 150, nebulas: true, glows: true, fx: { lightScale: 0.35, wideBloom: true, bloomStrength: 0.95 } },
-  low: { dprCap: 1.15, maxParticles: 300, density: 0.5, stars: 80, nebulas: false, glows: false, fx: { lightScale: 0.25, wideBloom: false, bloomStrength: 0.8 } }
+  high: { dprCap: 2.0, sceneDprCap: 1.5, lightBudget: 600, maxParticles: 900, density: 1, stars: 240, nebulas: true, glows: true, fx: { lightScale: 0.4, wideBloom: true, bloomStrength: 1 } },
+  medium: { dprCap: 1.6, sceneDprCap: 1.25, lightBudget: 300, maxParticles: 600, density: 0.8, stars: 150, nebulas: true, glows: true, fx: { lightScale: 0.33, wideBloom: true, bloomStrength: 0.95 } },
+  low: { dprCap: 1.15, sceneDprCap: 1.0, lightBudget: 150, maxParticles: 300, density: 0.5, stars: 80, nebulas: false, glows: false, fx: { lightScale: 0.25, wideBloom: false, bloomStrength: 0.8 } }
 };
 
 const WHITE = [1, 1, 1] as const;
@@ -35,6 +41,10 @@ const VIOLET = parseColor('#a855f7');
 const RED = parseColor('#ef4444');
 
 const QUALITY_ORDER: ConcreteQuality[] = ['low', 'medium', 'high'];
+
+/** Dynamic resolution range for the lit scene (fraction of sceneDprCap). */
+const MIN_SCENE_SCALE = 0.6;
+const SCENE_SCALE_STEP = 0.1;
 
 export class GameRenderer {
   public canvas: HTMLCanvasElement;
@@ -56,6 +66,12 @@ export class GameRenderer {
   public viewWidth: number = window.innerWidth;
   public viewHeight: number = window.innerHeight;
   public dpr: number = 1;
+  /** Pixel ratio of the scene canvas (equals dpr without WebGL lighting). */
+  public sceneDpr: number = 1;
+  /** Dynamic resolution factor, lowered in 'auto' quality before effects are cut. */
+  public sceneScale: number = 1;
+  /** Per-frame cost breakdown for the perf overlay. */
+  public stats = { fxMs: 0, lights: 0 };
 
   // Screen shake
   public shakeDuration: number = 0;
@@ -67,6 +83,7 @@ export class GameRenderer {
   private frameTimeAvg: number = 16.7;
   private adaptCooldown: number = 3;
   private goodFrameTime: number = 0;
+  private workTimeAvg: number = 8;
   public fps: number = 60;
 
   // Parallax cosmic stars & nebulas
@@ -139,6 +156,7 @@ export class GameRenderer {
   public setQuality(q: ConcreteQuality) {
     if (q === this.quality && this.stars.length > 0) return;
     this.quality = q;
+    if (settings.data.quality !== 'auto') this.sceneScale = 1;
     this.resize();
     this.applyQualityToParticles();
   }
@@ -149,6 +167,7 @@ export class GameRenderer {
     glowSettings.enabled = prof.glows && !this.lightingActive;
     Enemy.flashFill = this.lightingActive ? 'rgba(255, 255, 255, 0.38)' : '#ffffff';
     this.fx?.setProfile(prof.fx);
+    this.lights.limit = prof.lightBudget;
     Enemy.detail = this.quality === 'high' ? 2 : this.quality === 'medium' ? 1 : 0;
     if (this.particlesRef) {
       this.particlesRef.maxParticles = prof.maxParticles;
@@ -157,11 +176,14 @@ export class GameRenderer {
   }
 
   /**
-   * Called every frame with the real frame time. In 'auto' mode the renderer steps the
-   * quality down when the device can't keep ~50 FPS and back up when it has headroom.
+   * Called every frame with the frame interval and the CPU work time (simulation + render).
+   * In 'auto' mode a slow device first gets a lower scene resolution, then fewer effects.
+   * Stepping back up is judged by work time: with vsync or an FPS cap the frame interval never
+   * drops below the target, so it cannot show headroom.
    */
-  public reportFrameTime(ms: number) {
+  public reportFrameTime(ms: number, workMs: number, targetMs: number) {
     this.frameTimeAvg += (Math.min(ms, 100) - this.frameTimeAvg) * 0.05;
+    this.workTimeAvg += (Math.min(workMs, 100) - this.workTimeAvg) * 0.05;
     this.fps = 1000 / this.frameTimeAvg;
     if (settings.data.quality !== 'auto') return;
 
@@ -169,14 +191,26 @@ export class GameRenderer {
     if (this.adaptCooldown > 0) return;
 
     const idx = QUALITY_ORDER.indexOf(this.quality);
-    if (this.frameTimeAvg > 21 && idx > 0) {
-      this.setQuality(QUALITY_ORDER[idx - 1]);
-      this.adaptCooldown = 4;
+    const slow = this.frameTimeAvg > targetMs * 1.25;
+    const headroom = this.frameTimeAvg < targetMs * 1.08 && this.workTimeAvg < targetMs * 0.45;
+
+    if (slow) {
       this.goodFrameTime = 0;
-    } else if (this.frameTimeAvg < 12.5 && idx < QUALITY_ORDER.length - 1) {
+      if (this.lightingActive && this.sceneScale > MIN_SCENE_SCALE + 0.01) {
+        this.setSceneScale(this.sceneScale - SCENE_SCALE_STEP);
+        this.adaptCooldown = 2;
+      } else if (idx > 0) {
+        this.setQuality(QUALITY_ORDER[idx - 1]);
+        this.adaptCooldown = 4;
+      }
+    } else if (headroom) {
       // Only step up after a long stretch of headroom to avoid flip-flopping
       this.goodFrameTime += ms / 1000;
-      if (this.goodFrameTime > 12) {
+      if (this.sceneScale < 0.99 && this.goodFrameTime > 6) {
+        this.setSceneScale(this.sceneScale + SCENE_SCALE_STEP);
+        this.adaptCooldown = 3;
+        this.goodFrameTime = 0;
+      } else if (this.sceneScale >= 0.99 && idx < QUALITY_ORDER.length - 1 && this.goodFrameTime > 12) {
         this.setQuality(QUALITY_ORDER[idx + 1]);
         this.adaptCooldown = 6;
         this.goodFrameTime = 0;
@@ -186,22 +220,18 @@ export class GameRenderer {
     }
   }
 
+  private setSceneScale(scale: number) {
+    const next = Math.max(MIN_SCENE_SCALE, Math.min(1, Math.round(scale * 10) / 10));
+    if (next === this.sceneScale) return;
+    this.sceneScale = next;
+    this.applyResolution();
+  }
+
   public resize() {
     this.viewWidth = window.innerWidth;
     this.viewHeight = window.innerHeight;
     const prof = QUALITY[this.quality];
-    this.dpr = Math.min(prof.dprCap, Math.max(1, window.devicePixelRatio || 1));
-
-    const pw = Math.round(this.viewWidth * this.dpr);
-    const ph = Math.round(this.viewHeight * this.dpr);
-    for (const c of [this.canvas, this.sceneCanvas]) {
-      c.width = pw;
-      c.height = ph;
-    }
-    this.canvas.style.width = `${this.viewWidth}px`;
-    this.canvas.style.height = `${this.viewHeight}px`;
-    this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    this.fx?.resize(pw, ph, this.viewWidth, this.viewHeight);
+    this.applyResolution();
 
     if (this.particlesRef) {
       this.particlesRef.viewW = this.viewWidth;
@@ -209,6 +239,38 @@ export class GameRenderer {
     }
     this.initStars(prof.stars);
     this.buildVignette();
+  }
+
+  /** Sizes the canvases for the current viewport, quality and dynamic scene scale (cheap, no rebuilds). */
+  private applyResolution() {
+    const prof = QUALITY[this.quality];
+    const device = Math.max(1, window.devicePixelRatio || 1);
+    const w = this.viewWidth;
+    const h = this.viewHeight;
+
+    if (this.fx) {
+      this.dpr = Math.min(prof.dprCap, device);
+      this.sceneDpr = Math.max(0.5, Math.min(prof.sceneDprCap, device) * this.sceneScale);
+    } else {
+      // Single canvas: scene and text share one resolution
+      this.dpr = this.sceneDpr = Math.max(0.75, Math.min(prof.dprCap, device) * this.sceneScale);
+    }
+
+    const resizeCanvas = (c: HTMLCanvasElement, ratio: number) => {
+      const pw = Math.round(w * ratio);
+      const ph = Math.round(h * ratio);
+      if (c.width !== pw || c.height !== ph) {
+        c.width = pw;
+        c.height = ph;
+      }
+    };
+    resizeCanvas(this.canvas, this.dpr);
+    if (this.sceneCanvas !== this.canvas) resizeCanvas(this.sceneCanvas, this.sceneDpr);
+    this.canvas.style.width = `${w}px`;
+    this.canvas.style.height = `${h}px`;
+    this.ctx.setTransform(this.sceneDpr, 0, 0, this.sceneDpr, 0, 0);
+    // The lit image is composited at scene resolution and stretched by CSS; text stays on the sharp overlay
+    this.fx?.resize(this.sceneCanvas.width, this.sceneCanvas.height, w, h);
   }
 
   private initStars(count: number) {
@@ -277,7 +339,7 @@ export class GameRenderer {
     solarZones: SolarBurnZone[] = []
   ) {
     const ctx = this.ctx;
-    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    ctx.setTransform(this.sceneDpr, 0, 0, this.sceneDpr, 0, 0);
     const w = this.viewWidth;
     const h = this.viewHeight;
     const prof = QUALITY[this.quality];
@@ -321,12 +383,14 @@ export class GameRenderer {
         drawGlow(ctx, nx, ny, neb.radius, neb.color);
       }
     }
-    for (const star of lit ? [] : this.stars) {
-      const sx = ((star.x - camX * star.layer) % w + w) % w;
-      const sy = ((star.y - camY * star.layer) % h + h) % h;
-      ctx.fillStyle = star.color;
-      ctx.globalAlpha = star.alpha * 0.55;
-      ctx.fillRect(sx, sy, star.size, star.size);
+    if (!lit) {
+      for (const star of this.stars) {
+        const sx = ((star.x - camX * star.layer) % w + w) % w;
+        const sy = ((star.y - camY * star.layer) % h + h) % h;
+        ctx.fillStyle = star.color;
+        ctx.globalAlpha = star.alpha * 0.55;
+        ctx.fillRect(sx, sy, star.size, star.size);
+      }
     }
     ctx.globalAlpha = 1;
 
@@ -684,6 +748,8 @@ export class GameRenderer {
 
     if (lit && this.fx) {
       this.collectLights(player, enemies, boss, drops, weapons, playerProjectiles, enemyProjectiles, mortarZones, particles, obelisks, solarZones, camX, camY);
+      this.stats.lights = this.lights.count;
+      const fxStart = performance.now();
       this.fx.render(this.sceneCanvas, this.lights, {
         camX,
         camY,
@@ -695,6 +761,7 @@ export class GameRenderer {
         flash: this.flashAmount * 0.55,
         flashColor: this.flashRgb
       });
+      this.stats.fxMs += (performance.now() - fxStart - this.stats.fxMs) * 0.1;
       const o = this.overlayCtx;
       o.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
       o.clearRect(0, 0, w, h);
@@ -745,38 +812,23 @@ export class GameRenderer {
     L.push(psx, psy, player.getLightRadius() * 1.3, auraColor, (0.42 + 0.5 * pct) * flicker);
     L.push(psx, psy, 64, WHITE, 0.4 * flicker);
 
-    // Bosses & enemies glow in their own color
+    // Boss, then the effects that carry gameplay meaning; with a light budget the order is the priority
     if (boss && !boss.isDefeated) {
       const bx = boss.x - camX;
       const by = boss.y - camY;
       if (visible(bx, by, boss.radius * 6)) L.push(bx, by, boss.radius * 5.5, parseColor(boss.color), boss.isCharging ? 1.1 : 0.75);
     }
-    for (const e of enemies) {
-      const ex = e.x - camX;
-      const ey = e.y - camY;
-      if (!visible(ex, ey, 80)) continue;
-      L.push(ex, ey, e.radius * (e.isElite ? 4.5 : 3.2), parseColor(e.color), e.isElite ? 0.5 : 0.24);
-    }
-
-    // Shots
-    for (const p of playerProjectiles) {
-      const x = p.x - camX;
-      const y = p.y - camY;
-      if (visible(x, y, 40)) L.push(x, y, Math.max(26, p.radius * 8), parseColor(p.color), 0.5);
-    }
-    for (const ep of enemyProjectiles) {
-      const x = ep.x - camX;
-      const y = ep.y - camY;
-      if (visible(x, y, 40)) L.push(x, y, Math.max(24, ep.radius * 7), parseColor(ep.color), 0.55);
-    }
-
-    // Pickups
-    for (const d of drops) {
-      const x = d.x - camX;
-      const y = d.y - camY;
-      if (!visible(x, y, 50)) continue;
-      const big = d.size === 'big';
-      L.push(x, y, big ? 55 : 30, parseColor(d.color), big ? 0.55 : 0.3);
+    // Big blasts (supernova, boss) light up the arena - always within budget
+    for (const sw of particles.shockwaves) {
+      if (sw.maxRadius < 100) continue;
+      const x = sw.x - camX;
+      const y = sw.y - camY;
+      const r = sw.radius * 1.2 + 30;
+      if (!visible(x, y, r)) continue;
+      const fade = 1 - sw.life / sw.maxLife;
+      // Small hit shockwaves only flicker; big blasts (supernova, boss) light up the arena
+      const strength = sw.maxRadius < 100 ? 0.22 : Math.min(1, 0.3 + sw.width * 0.08);
+      L.push(x, y, r, parseColor(sw.color), fade * fade * strength);
     }
 
     // Zones & world objects
@@ -815,8 +867,38 @@ export class GameRenderer {
       }
     }
 
-    // Explosions & shockwaves flash the surroundings
+    // Shots
+    for (const p of playerProjectiles) {
+      const x = p.x - camX;
+      const y = p.y - camY;
+      if (visible(x, y, 40)) L.push(x, y, Math.max(26, p.radius * 8), parseColor(p.color), 0.5);
+    }
+    for (const ep of enemyProjectiles) {
+      const x = ep.x - camX;
+      const y = ep.y - camY;
+      if (visible(x, y, 40)) L.push(x, y, Math.max(24, ep.radius * 7), parseColor(ep.color), 0.55);
+    }
+
+    // Enemies glow in their own color
+    for (const e of enemies) {
+      const ex = e.x - camX;
+      const ey = e.y - camY;
+      if (!visible(ex, ey, 80)) continue;
+      L.push(ex, ey, e.radius * (e.isElite ? 4.5 : 3.2), parseColor(e.color), e.isElite ? 0.5 : 0.24);
+    }
+
+    // Pickups
+    for (const d of drops) {
+      const x = d.x - camX;
+      const y = d.y - camY;
+      if (!visible(x, y, 50)) continue;
+      const big = d.size === 'big';
+      L.push(x, y, big ? 55 : 30, parseColor(d.color), big ? 0.55 : 0.3);
+    }
+
+    // Small hit shockwaves only flicker - first to go when the budget runs out
     for (const sw of particles.shockwaves) {
+      if (sw.maxRadius >= 100) continue;
       const x = sw.x - camX;
       const y = sw.y - camY;
       const r = sw.radius * 1.2 + 30;

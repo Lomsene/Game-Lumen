@@ -1,7 +1,7 @@
 import { Player } from '../entities/Player';
 import { Weapon } from '../weapons/Weapon';
 import { PASSIVE_UPGRADES } from '../upgrades/UpgradePool';
-import { settings, SettingsData, QualityLevel, JoystickMode, haptic } from '../meta/Settings';
+import { settings, SettingsData, QualityLevel, JoystickMode, FpsCap, haptic } from '../meta/Settings';
 
 interface MenuCallbacks {
   onResume: () => void;
@@ -137,6 +137,8 @@ export class MenuUI {
 
     const quality = document.getElementById('set-quality') as HTMLSelectElement | null;
     quality?.addEventListener('change', () => settings.set('quality', quality.value as QualityLevel));
+    const fpsCap = document.getElementById('set-fpscap') as HTMLSelectElement | null;
+    fpsCap?.addEventListener('change', () => settings.set('fpsCap', Number(fpsCap.value) as FpsCap));
     const joystick = document.getElementById('set-joystick') as HTMLSelectElement | null;
     joystick?.addEventListener('change', () => settings.set('joystickMode', joystick.value as JoystickMode));
 
@@ -159,6 +161,7 @@ export class MenuUI {
     setVal('set-music', `${Math.round(d.musicVolume * 100)}`);
     setVal('set-sfx', `${Math.round(d.sfxVolume * 100)}`);
     setVal('set-quality', d.quality);
+    setVal('set-fpscap', `${d.fpsCap}`);
     setVal('set-joystick', d.joystickMode);
     setChk('set-muted', d.muted);
     setChk('set-haptics', d.haptics);
