@@ -87,6 +87,8 @@ export class Game {
   private perf = new PerfMonitor();
   private benchRecorder = new FrameRecorder();
   private benchTime: number = 0;
+  /** This run is a benchmark (?bench=1 or the settings button): never saved or recorded. */
+  private benchRun: boolean = false;
   /** Frames rendered since the game stopped simulating (menus/pause only need one). */
   private staticFrames: number = 0;
 
@@ -157,6 +159,15 @@ export class Game {
 
   private initEventListeners() {
     document.getElementById('btn-start-game')?.addEventListener('click', () => this.startNewRun());
+    // In the APK there is no URL bar for ?bench=1 - the benchmark starts from the settings
+    document.getElementById('btn-run-benchmark')?.addEventListener('click', () => {
+      if (this.state !== 'menu') {
+        this.menus.showToast('Den Leistungstest bitte aus dem Hauptmenü starten.');
+        return;
+      }
+      this.menus.hideSettings();
+      this.startNewRun(true);
+    });
     document.getElementById('btn-open-forge')?.addEventListener('click', () => {
       this.forgeModal.show(() => this.updateMenuStats(), 'upgrades');
     });
@@ -256,7 +267,8 @@ export class Game {
     }
   }
 
-  public startNewRun() {
+  public startNewRun(bench: boolean = BENCH_ENABLED) {
+    this.benchRun = bench;
     this.player = new Player();
     this.player.initFromForge();
 
@@ -291,7 +303,7 @@ export class Game {
     this.achievementCheckTimer = 0;
     this.runAchievements = [];
     runStats.reset();
-    if (BENCH_ENABLED) this.setupBenchmark();
+    if (this.benchRun) this.setupBenchmark();
 
     this.renderer.cameraX = this.player.x - this.renderer.viewWidth / 2;
     this.renderer.cameraY = this.player.y - this.renderer.viewHeight / 2;
@@ -353,7 +365,7 @@ export class Game {
 
     if (this.state === 'playing') {
       this.renderer.reportFrameTime(frameMs, this.lastWorkMs, cap > 0 ? 1000 / cap : 1000 / 60);
-      if (BENCH_ENABLED) this.updateBenchmark(frameMs, frameDt);
+      if (this.benchRun) this.updateBenchmark(frameMs, frameDt);
       this.staticFrames = 0;
       const steps = Math.min(MAX_STEPS_PER_FRAME, Math.max(1, Math.ceil(frameDt / MAX_STEP - 1e-6)));
       const stepDt = Math.min(frameDt, MAX_STEP * MAX_STEPS_PER_FRAME) / steps;
@@ -361,7 +373,7 @@ export class Game {
         this.update(stepDt);
       }
       this.hud.update(this.player, this.survivalTime, this.boss, this.weapons, this.getPhaseLabel());
-      if (BENCH_ENABLED) this.pendingLevelUps = 0; // XP from this frame must not open the gift modal
+      if (this.benchRun) this.pendingLevelUps = 0; // XP from this frame must not open the gift modal
       this.processLevelUpQueue();
     } else if (this.state === 'menu' && this.renderer.lightingActive) {
       // Living menu backdrop: drifting nebula and the idle player orb
@@ -572,7 +584,7 @@ export class Game {
     this.achievementCheckTimer += dt;
     if (this.achievementCheckTimer >= 1) {
       this.achievementCheckTimer = 0;
-      if (!BENCH_ENABLED) this.announceAchievements(achievements.evaluate(this.survivalTime, player, this.weapons, player.kills));
+      if (!this.benchRun) this.announceAchievements(achievements.evaluate(this.survivalTime, player, this.weapons, player.kills));
     }
   }
 
@@ -1276,9 +1288,9 @@ export class Game {
     sound.playEnemyDeath();
     haptic([200]);
 
-    const isRecord = !BENCH_ENABLED && this.survivalTime > forge.bestSurvivalTime;
+    const isRecord = !this.benchRun && this.survivalTime > forge.bestSurvivalTime;
     let rank = 0;
-    if (!BENCH_ENABLED) {
+    if (!this.benchRun) {
       forge.addShards(this.player.shardsCollectedThisRun);
       rank = forge.recordRun(this.survivalTime, this.player.score, this.bossesDefeated, this.player.kills, this.player.classId).rank;
       this.announceAchievements(achievements.finishRun(this.survivalTime, this.player, this.weapons));
