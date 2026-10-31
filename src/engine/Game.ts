@@ -17,11 +17,19 @@ import { MenuUI } from '../ui/MenuUI';
 import { forge, PLAYER_CLASSES, PLAYER_SKINS } from '../meta/Forge';
 import { settings, haptic } from '../meta/Settings';
 import { sound } from './Sound';
+import { runStats, SOURCE_LABELS } from '../meta/RunStats';
+import { achievements, AchievementDef, ACHIEVEMENTS } from '../meta/Achievements';
+import { PASSIVE_UPGRADES } from '../upgrades/UpgradePool';
+import { AchievementsModal } from '../ui/AchievementsModal';
 
 export type GameState = 'menu' | 'playing' | 'paused' | 'levelup' | 'gameover';
 
-/** Fixed simulation step: identical game speed on 60/90/120/144 Hz displays. */
-const STEP = 1 / 60;
+/**
+ * Simulation runs once per displayed frame, split into substeps of at most 1/60 s.
+ * A fixed 60 Hz step on a 120 Hz phone moves objects only every other frame, which
+ * looks like stutter even at full FPS - variable substeps keep motion smooth at any refresh rate.
+ */
+const MAX_STEP = 1 / 60;
 const MAX_STEPS_PER_FRAME = 5;
 
 export class Game {
@@ -33,6 +41,9 @@ export class Game {
   public giftModal: GiftModal;
   public forgeModal: ForgeModal;
   public menus: MenuUI;
+  public achievementsModal: AchievementsModal;
+  private achievementCheckTimer: number = 0;
+  private runAchievements: AchievementDef[] = [];
 
   public state: GameState = 'menu';
   public survivalTime: number = 0; // seconds
@@ -59,7 +70,6 @@ export class Game {
   private swarmEventTimer: number = 0;
   private riftSpawnTimer: number = 0;
   private lastTime: number = 0;
-  private accumulator: number = 0;
   /** Frames rendered since the game stopped simulating (menus/pause only need one). */
   private staticFrames: number = 0;
 
@@ -92,6 +102,7 @@ export class Game {
     this.hud = new HUD();
     this.giftModal = new GiftModal();
     this.forgeModal = new ForgeModal();
+    this.achievementsModal = new AchievementsModal();
     this.menus = new MenuUI({
       onResume: () => this.resume(),
       onQuit: () => this.quitRun(),
@@ -145,6 +156,7 @@ export class Game {
       this.guideOverlay?.classList.add('hidden');
     });
     document.getElementById('btn-open-settings')?.addEventListener('click', () => this.menus.showSettings());
+    document.getElementById('btn-open-achievements')?.addEventListener('click', () => this.achievementsModal.show());
 
     document.getElementById('pause-btn')?.addEventListener('click', () => this.pause());
 
@@ -188,6 +200,7 @@ export class Game {
 
     // Android hardware back button (dispatched by MainActivity)
     window.addEventListener('aether-back', () => {
+      if (this.achievementsModal.isOpen) return this.achievementsModal.hide();
       if (this.menus.closeTopOverlay()) return;
       if (this.state === 'playing') this.pause();
       else if (this.state === 'paused') this.resume();
@@ -205,6 +218,8 @@ export class Game {
     if (shardsEl) shardsEl.textContent = `${forge.shards}`;
     if (recordEl) recordEl.textContent = formatTime(forge.bestSurvivalTime);
     if (bossRecordEl) bossRecordEl.textContent = `${forge.bestBossesDefeated}`;
+    const achCountEl = document.getElementById('menu-achievement-count');
+    if (achCountEl) achCountEl.textContent = `${achievements.unlocked.size}/${ACHIEVEMENTS.length}`;
     const cDef = PLAYER_CLASSES[forge.selectedClass] ?? PLAYER_CLASSES.wanderer;
     const sDef = PLAYER_SKINS[forge.selectedSkin] ?? PLAYER_SKINS.cyan;
     if (classEl) classEl.textContent = `${cDef.icon} ${cDef.name}`;
@@ -256,7 +271,9 @@ export class Game {
     this.pendingLevelUps = 0;
     this.pendingStartGifts = forge.getLevel('firstGift');
     this.tutorialStep = settings.data.tutorialSeen ? -1 : 0;
-    this.accumulator = 0;
+    this.achievementCheckTimer = 0;
+    this.runAchievements = [];
+    runStats.reset();
 
     this.renderer.cameraX = this.player.x - this.renderer.viewWidth / 2;
     this.renderer.cameraY = this.player.y - this.renderer.viewHeight / 2;
@@ -307,18 +324,17 @@ export class Game {
     if (this.state === 'playing') {
       this.renderer.reportFrameTime(frameMs);
       this.staticFrames = 0;
-      this.accumulator += frameDt;
-      let steps = 0;
-      while (this.accumulator >= STEP && steps < MAX_STEPS_PER_FRAME && this.state === 'playing') {
-        this.update(STEP);
-        this.accumulator -= STEP;
-        steps++;
+      const steps = Math.min(MAX_STEPS_PER_FRAME, Math.max(1, Math.ceil(frameDt / MAX_STEP - 1e-6)));
+      const stepDt = Math.min(frameDt, MAX_STEP * MAX_STEPS_PER_FRAME) / steps;
+      for (let i = 0; i < steps && this.state === 'playing'; i++) {
+        this.update(stepDt);
       }
-      if (steps === MAX_STEPS_PER_FRAME) this.accumulator = 0; // Device too slow - drop the backlog
       this.hud.update(this.player, this.survivalTime, this.boss, this.weapons, this.getPhaseLabel());
       this.processLevelUpQueue();
+    } else if (this.state === 'menu' && this.renderer.lightingActive) {
+      // Living menu backdrop: drifting nebula and the idle player orb
+      this.staticFrames = 0;
     } else {
-      this.accumulator = 0;
       this.staticFrames++;
     }
 
@@ -399,6 +415,7 @@ export class Game {
     const moveInput = this.input.getMovementVector(playerScreenPos);
 
     if (this.input.consumeDash() && player.triggerDash()) {
+      runStats.dashes += 1;
       // Dash shockwave clears nearby enemy projectiles
       const phantomBonus = (player.passives.get('phantomStep') ?? 0) * 35;
       const dashWaveRadius = 85 + phantomBonus;
@@ -414,6 +431,7 @@ export class Game {
     if (this.input.consumeSupernova()) {
       const sacrificedLight = player.triggerSupernova();
       if (sacrificedLight > 0) {
+        runStats.supernovas += 1;
         this.executeSupernovaBlast(sacrificedLight, minutes);
       } else if (!player.isNovaReady()) {
         const pct = Math.floor((player.novaCharge / player.getNovaChargeNeeded()) * 100);
@@ -429,6 +447,8 @@ export class Game {
       this.handleGameOver();
       return;
     }
+    runStats.lowestLightPct = Math.min(runStats.lowestLightPct, player.light / player.maxLight);
+    runStats.maxCombo = Math.max(runStats.maxCombo, player.comboCount);
 
     // 2. Spawning
     this.handleSpawning(dt);
@@ -438,7 +458,12 @@ export class Game {
 
     // 3. Weapons (auto-aim)
     for (const weapon of this.weapons) {
+      runStats.source = weapon.id;
+      const projectilesBefore = this.playerProjectiles.length;
       weapon.update(dt, player, this.enemies, this.boss, this.particles, this.playerProjectiles);
+      for (let k = projectilesBefore; k < this.playerProjectiles.length; k++) {
+        this.playerProjectiles[k].sourceId ??= weapon.id;
+      }
     }
 
     // 4. Player projectiles
@@ -448,6 +473,7 @@ export class Game {
     this.separateEnemies();
     const projectileSpeedBonus = 1 + Math.min(0.55, minutes * 0.08);
     const lightRadius = player.getLightRadius();
+    runStats.source = 'phosphor'; // the only damage dealt inside enemy.update()
     for (const enemy of this.enemies) {
       if (enemy.dead) continue;
       enemy.update(dt, player, this.enemyProjectiles, this.mortarZones, this.particles, projectileSpeedBonus, lightRadius);
@@ -496,10 +522,28 @@ export class Game {
 
     // 11. Particles
     this.particles.update(dt);
+
+    // 12. Live achievement checks (once per second)
+    this.achievementCheckTimer += dt;
+    if (this.achievementCheckTimer >= 1) {
+      this.achievementCheckTimer = 0;
+      this.announceAchievements(achievements.evaluate(this.survivalTime, player, this.weapons, player.kills));
+    }
+  }
+
+  private announceAchievements(list: AchievementDef[]) {
+    for (const a of list) {
+      this.runAchievements.push(a);
+      this.menus.showToast(`${a.icon} Erfolg: ${a.name} • +${a.reward} ✨`);
+      sound.playLevelUp();
+      haptic([20, 40, 30]);
+    }
   }
 
   private onPlayerHit(shake: number) {
+    runStats.hitsTaken += 1;
     this.renderer.triggerScreenShake(shake, 0.22);
+    this.renderer.triggerHitPulse(Math.min(1, shake / 10));
     haptic(40);
   }
 
@@ -512,9 +556,10 @@ export class Game {
 
     for (let i = this.playerProjectiles.length - 1; i >= 0; i--) {
       const p = this.playerProjectiles[i];
+      runStats.source = p.sourceId ?? 'other';
       p.life += dt;
       if (p.life >= p.maxLife) {
-        if (p.spawnsSolarZone) this.spawnSolarBurnZone(p.x, p.y, p.damage);
+        if (p.spawnsSolarZone) this.spawnSolarBurnZone(p.x, p.y, p.damage, runStats.source);
         this.removePlayerProjectile(i);
         continue;
       }
@@ -555,7 +600,7 @@ export class Game {
 
       // Most projectiles end at the dashed light perimeter
       if (p.boundToLightRadius && (p.x - player.x) ** 2 + (p.y - player.y) ** 2 >= lightRadius * lightRadius) {
-        if (p.spawnsSolarZone) this.spawnSolarBurnZone(p.x, p.y, p.damage);
+        if (p.spawnsSolarZone) this.spawnSolarBurnZone(p.x, p.y, p.damage, runStats.source);
         this.particles.emitSpark(p.x, p.y, p.color, 2);
         this.removePlayerProjectile(i);
         continue;
@@ -577,7 +622,7 @@ export class Game {
           enemy.applyKnockback((p.vx / spd) * p.staggerStrength, (p.vy / spd) * p.staggerStrength);
         }
         if (p.spawnsSolarZone) {
-          this.spawnSolarBurnZone(p.x, p.y, p.damage);
+          this.spawnSolarBurnZone(p.x, p.y, p.damage, runStats.source);
           p.spawnsSolarZone = false;
         }
 
@@ -614,7 +659,7 @@ export class Game {
         const isCrit = p.bypassesShield || Math.random() < critChance;
         boss.takeDamage(isCrit ? p.damage * critMult : p.damage, this.particles, isCrit);
         if (p.spawnsSolarZone) {
-          this.spawnSolarBurnZone(p.x, p.y, p.damage);
+          this.spawnSolarBurnZone(p.x, p.y, p.damage, runStats.source);
           p.spawnsSolarZone = false;
         }
         p.pierce -= 1;
@@ -666,6 +711,7 @@ export class Game {
         continue;
       }
       const tick = sz.damagePerSec * dt;
+      runStats.source = sz.sourceId;
       for (const enemy of this.enemyGrid.query(sz.x, sz.y, sz.radius)) {
         if (enemy.dead) continue;
         const rr = sz.radius + enemy.radius;
@@ -749,11 +795,14 @@ export class Game {
         this.particles.emitExplosion(ob.x, ob.y, '#a855f7', 35);
         this.particles.emitBannerText(player.x, player.y, 'OBELISK OVERDRIVE! +35 LICHT', '#fbbf24');
         this.renderer.triggerScreenShake(14, 0.4);
+        this.renderer.flash('#fbbf24', 0.45);
         sound.playLevelUp();
         haptic([30, 40, 30]);
 
         player.addLight(35);
         player.overdriveTimer = Math.max(player.overdriveTimer, 8.0);
+        runStats.obelisksCaptured += 1;
+        runStats.source = 'obelisk';
 
         // Nova blast scales with time so obelisks stay worth capturing
         const blast = 180 * Balance.enemyHpScale(this.survivalTime / 60);
@@ -972,6 +1021,8 @@ export class Game {
     this.particles.emitExplosion(px, py, '#fbbf24', 50);
     this.particles.emitBannerText(px, py - 24, '⚡ SUPERNOVA! ⚡', '#fbbf24');
     this.renderer.triggerScreenShake(24, 0.75);
+    this.renderer.flash('#fde68a', 1);
+    runStats.source = 'supernova';
     haptic([60, 40, 120]);
 
     for (const ep of this.enemyProjectiles) this.particles.emitSpark(ep.x, ep.y, '#fbbf24', 2);
@@ -995,13 +1046,13 @@ export class Game {
     // Protective ring of solar fields
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * Math.PI * 2;
-      this.spawnSolarBurnZone(px + Math.cos(a) * 105, py + Math.sin(a) * 105, 95 * dmgBonusMult * Balance.enemyHpScale(minutes) * 0.5);
+      this.spawnSolarBurnZone(px + Math.cos(a) * 105, py + Math.sin(a) * 105, 95 * dmgBonusMult * Balance.enemyHpScale(minutes) * 0.5, 'supernova');
     }
   }
 
-  private spawnSolarBurnZone(x: number, y: number, baseDmg: number) {
+  private spawnSolarBurnZone(x: number, y: number, baseDmg: number, sourceId: string) {
     if (this.solarZones.length > 24) this.solarZones.shift();
-    this.solarZones.push({ x, y, radius: 68, damagePerSec: baseDmg * 0.65, life: 0, maxLife: 3.2 });
+    this.solarZones.push({ x, y, radius: 68, damagePerSec: baseDmg * 0.65, life: 0, maxLife: 3.2, sourceId });
     this.particles.emitExplosion(x, y, '#f97316', 12);
   }
 
@@ -1036,12 +1087,14 @@ export class Game {
     this.boss = new Boss(bossNumber, pos.x, pos.y);
     this.particles.emitBannerText(this.player.x, this.player.y - 50, `BOSS ${bossNumber}: ${this.boss.name}`, this.boss.color);
     this.renderer.triggerScreenShake(20, 0.8);
+    this.renderer.flash(this.boss.color, 0.4);
     haptic([80, 60, 80]);
   }
 
   private handleEnemyDefeat(enemy: Enemy) {
     const player = this.player;
     player.registerKill();
+    if (enemy.isElite) runStats.elitesDefeated += 1;
     player.score += enemy.scoreValue * player.getTotalMultiplier();
     player.addNovaCharge(enemy.isElite ? 5 : 1);
 
@@ -1087,10 +1140,12 @@ export class Game {
     const boss = this.boss;
     boss.dropRewards(this.drops);
     this.bossesDefeated += 1;
+    runStats.bossesDefeated += 1;
     this.player.score += 2500 * boss.bossNumber * this.player.scoreMultiplier;
     this.player.addNovaCharge(this.player.getNovaChargeNeeded()); // Boss kill fully charges the nova
     this.particles.emitBannerText(this.player.x, this.player.y - 50, `${boss.name} BESIEGT!`, '#fbbf24');
     this.renderer.triggerScreenShake(20, 0.8);
+    this.renderer.flash('#ffffff', 0.8);
     haptic([100, 50, 100, 50, 150]);
     this.pendingLevelUps += this.player.addXp(40 + boss.bossNumber * 30);
     this.boss = null;
@@ -1125,7 +1180,9 @@ export class Game {
 
     const isRecord = this.survivalTime > forge.bestSurvivalTime;
     forge.addShards(this.player.shardsCollectedThisRun);
-    forge.recordRun(this.survivalTime, this.player.score, this.bossesDefeated);
+    const record = forge.recordRun(this.survivalTime, this.player.score, this.bossesDefeated, this.player.kills, this.player.classId);
+    this.announceAchievements(achievements.finishRun(this.survivalTime, this.player, this.weapons));
+    this.renderRunDetails(record.rank);
 
     const set = (id: string, text: string) => {
       const el = document.getElementById(id);
@@ -1141,6 +1198,73 @@ export class Game {
 
     this.gameoverOverlay?.classList.remove('hidden');
   }
+
+  /** Game-over breakdown: leaderboard rank, key stats, damage per source, build and new achievements. */
+  private renderRunDetails(rank: number) {
+    const rankEl = document.getElementById('gameover-record');
+    if (rankEl) {
+      const label = rank > 0 && forge.topRuns.length > 1 ? `🏆 PLATZ ${rank} DER BESTENLISTE` : '';
+      rankEl.textContent = label;
+      rankEl.classList.toggle('hidden', !label);
+    }
+
+    const miniEl = document.getElementById('gameover-mini-stats');
+    if (miniEl) {
+      miniEl.innerHTML = [
+        `Max. Serie <b>${runStats.maxCombo}</b>`,
+        `Elite <b>${runStats.elitesDefeated}</b>`,
+        `Obelisken <b>${runStats.obelisksCaptured}</b>`,
+        `Supernovas <b>${runStats.supernovas}</b>`,
+        `Dashes <b>${runStats.dashes}</b>`,
+        `Treffer erlitten <b>${runStats.hitsTaken}</b>`
+      ]
+        .map((item) => `<span>${item}</span>`)
+        .join('');
+    }
+
+    const damageEl = document.getElementById('gameover-damage');
+    if (damageEl) {
+      const names = new Map<string, string>(this.weapons.map((w) => [w.id, w.getDisplayName()]));
+      const labelFor = (id: string) => names.get(id) ?? SOURCE_LABELS[id] ?? id.toUpperCase();
+      const rows = [...runStats.damageBySource.entries()].filter(([, v]) => v >= 1).sort((a, b) => b[1] - a[1]).slice(0, 6);
+      const max = rows[0]?.[1] ?? 1;
+      damageEl.innerHTML = rows.length
+        ? rows
+            .map(
+              ([id, v]) => `<div class="damage-row">
+                <span>${labelFor(id)}</span>
+                <div class="damage-track"><div class="damage-fill" style="width:${((v / max) * 100).toFixed(1)}%"></div></div>
+                <span class="dmg-val">${formatNumber(v)}</span>
+              </div>`
+            )
+            .join('')
+        : '<div class="damage-row"><span>Kein Schaden verursacht</span></div>';
+    }
+
+    const buildEl = document.getElementById('gameover-build');
+    if (buildEl) {
+      const weaponChips = this.weapons.map(
+        (w) => `<span class="build-chip weapon ${w.isEvolved ? 'evolved' : ''}">${w.getDisplayName()} ${w.isEvolved ? '★' : `L${w.level}`}</span>`
+      );
+      const passiveChips = [...this.player.passives.entries()]
+        .filter(([, lvl]) => lvl > 0)
+        .map(([id, lvl]) => `<span class="build-chip">${PASSIVE_UPGRADES[id]?.name ?? id} ${lvl}</span>`);
+      buildEl.innerHTML = [...weaponChips, ...passiveChips].join('');
+    }
+
+    const achBlock = document.getElementById('gameover-achievements-block');
+    const achEl = document.getElementById('gameover-achievements');
+    if (achBlock && achEl) {
+      achBlock.classList.toggle('hidden', this.runAchievements.length === 0);
+      achEl.innerHTML = this.runAchievements
+        .map((a) => `<span class="build-chip achievement">${a.icon} ${a.name} +${a.reward} ✨</span>`)
+        .join('');
+    }
+  }
+}
+
+function formatNumber(v: number): string {
+  return v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v >= 1e4 ? `${Math.round(v / 1e3)}k` : `${Math.round(v)}`;
 }
 
 export function formatTime(totalSeconds: number): string {

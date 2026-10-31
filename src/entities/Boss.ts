@@ -3,6 +3,7 @@ import { ParticleSystem } from '../engine/Particle';
 import { EnemyProjectile, MortarZone } from './Enemy';
 import { Drop } from './Drop';
 import { sound } from '../engine/Sound';
+import { runStats } from '../meta/RunStats';
 import { Balance } from '../engine/Balance';
 import { drawGlow } from '../engine/GlowCache';
 
@@ -106,6 +107,7 @@ export class Boss {
       return false;
     }
 
+    runStats.recordDamage(Math.min(amount, Math.max(0, this.hp)));
     this.hp -= amount;
     this.hitFlashTimer = 0.08;
     if (isTick) {

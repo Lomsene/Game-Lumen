@@ -19,3 +19,9 @@ android-apk/android/app/src/main/assets/public/
 *.log
 .DS_Store
 Thumbs.db
+
+# Release signing (never commit!)
+*.jks
+*.keystore
+keystore.properties
+android-apk/*.aab

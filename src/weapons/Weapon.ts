@@ -26,6 +26,7 @@ export interface PlayerProjectile {
   staggerStrength?: number;
   /** Visual style: 'orb' (default), 'star' (Sparks), 'needle', 'shell' (Flare). */
   shape?: 'orb' | 'star' | 'needle' | 'shell';
+  sourceId?: string; // Weapon id for damage statistics (set by Game when spawned)
   spin?: number;
 }
 

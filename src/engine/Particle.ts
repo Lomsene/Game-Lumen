@@ -113,7 +113,8 @@ export class ParticleSystem {
     }
   }
 
-  public render(ctx: CanvasRenderingContext2D, cameraX: number, cameraY: number) {
+  /** Shockwaves and particles (part of the lit scene). */
+  public renderEffects(ctx: CanvasRenderingContext2D, cameraX: number, cameraY: number) {
     const viewW = this.viewW;
     const viewH = this.viewH;
 
@@ -162,6 +163,12 @@ export class ParticleSystem {
       ctx.restore();
     }
 
+  }
+
+  /** Floating combat text, drawn on the unlit overlay layer so it is never darkened. */
+  public renderTexts(ctx: CanvasRenderingContext2D, cameraX: number, cameraY: number) {
+    const viewW = this.viewW;
+    const viewH = this.viewH;
     if (this.floatingTexts.length > 0) {
       ctx.save();
       ctx.textAlign = 'center';

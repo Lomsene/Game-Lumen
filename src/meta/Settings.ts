@@ -1,3 +1,5 @@
+import { storage } from '../engine/Storage';
+
 /**
  * Persistent player settings (audio, graphics quality, controls, accessibility).
  */
@@ -38,8 +40,13 @@ class SettingsManager {
   private listeners: Array<(s: SettingsData) => void> = [];
 
   constructor() {
+    this.load();
+  }
+
+  /** Re-read after storage.init() restored the native copy on Android. */
+  public load() {
     try {
-      const raw = localStorage.getItem(this.STORAGE_KEY);
+      const raw = storage.get(this.STORAGE_KEY);
       if (raw) this.data = { ...DEFAULTS, ...JSON.parse(raw) };
     } catch {
       this.data = { ...DEFAULTS };
@@ -57,11 +64,7 @@ class SettingsManager {
   }
 
   private save() {
-    try {
-      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.data));
-    } catch {
-      // Storage may be unavailable (private mode) - settings then only last for this session.
-    }
+    storage.set(this.STORAGE_KEY, JSON.stringify(this.data));
   }
 }
 

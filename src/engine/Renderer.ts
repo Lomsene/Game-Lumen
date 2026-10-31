@@ -7,6 +7,8 @@ import { ParticleSystem } from './Particle';
 import { BeaconWeapon, RadianceWeapon, OrbitersWeapon, PulseWeapon } from '../weapons/WeaponRegistry';
 import { drawGlow, glowSettings } from './GlowCache';
 import { settings, QualityLevel } from '../meta/Settings';
+import { PostFX, LightBuffer, FxProfile, parseColor } from './PostFX';
+import { PLAYER_SKINS } from '../meta/Forge';
 
 type ConcreteQuality = Exclude<QualityLevel, 'auto'>;
 
@@ -17,19 +19,36 @@ interface QualityProfile {
   stars: number;
   nebulas: boolean;
   glows: boolean;
+  fx: FxProfile;
 }
 
 const QUALITY: Record<ConcreteQuality, QualityProfile> = {
-  high: { dprCap: 2.0, maxParticles: 900, density: 1, stars: 240, nebulas: true, glows: true },
-  medium: { dprCap: 1.5, maxParticles: 500, density: 0.7, stars: 150, nebulas: true, glows: true },
-  low: { dprCap: 1.0, maxParticles: 260, density: 0.45, stars: 80, nebulas: false, glows: false }
+  high: { dprCap: 2.0, maxParticles: 900, density: 1, stars: 240, nebulas: true, glows: true, fx: { lightScale: 0.5, wideBloom: true, bloomStrength: 1 } },
+  medium: { dprCap: 1.6, maxParticles: 600, density: 0.8, stars: 150, nebulas: true, glows: true, fx: { lightScale: 0.35, wideBloom: true, bloomStrength: 0.95 } },
+  low: { dprCap: 1.15, maxParticles: 300, density: 0.5, stars: 80, nebulas: false, glows: false, fx: { lightScale: 0.25, wideBloom: false, bloomStrength: 0.8 } }
 };
+
+const WHITE = [1, 1, 1] as const;
+const GOLD = parseColor('#fbbf24');
+const ORANGE = parseColor('#f97316');
+const VIOLET = parseColor('#a855f7');
+const RED = parseColor('#ef4444');
 
 const QUALITY_ORDER: ConcreteQuality[] = ['low', 'medium', 'high'];
 
 export class GameRenderer {
   public canvas: HTMLCanvasElement;
+  /** Scene target (offscreen when WebGL lighting is active). */
   public ctx: CanvasRenderingContext2D;
+  /** Unlit top layer: floating texts and edge arrows stay crisp above the lighting. */
+  private overlayCtx: CanvasRenderingContext2D;
+  private sceneCanvas: HTMLCanvasElement;
+  private fx: PostFX | null = null;
+  private lights = new LightBuffer(900);
+  private time = 0;
+  private hitPulse = 0;
+  private flashAmount = 0;
+  private flashRgb: [number, number, number] = [1, 1, 1];
   public cameraX: number = 0;
   public cameraY: number = 0;
 
@@ -59,10 +78,28 @@ export class GameRenderer {
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
-    // Note: no `desynchronized` - it causes tearing on many Android devices
-    const context = canvas.getContext('2d', { alpha: false });
-    if (!context) throw new Error('Failed to get 2D context');
-    this.ctx = context;
+
+    // WebGL lighting: the scene renders offscreen, a WebGL canvas below the overlay shows the lit result
+    const fxCanvas = document.createElement('canvas');
+    fxCanvas.id = 'fx-canvas';
+    this.fx = PostFX.create(fxCanvas);
+    if (this.fx) {
+      canvas.parentElement?.insertBefore(fxCanvas, canvas);
+      this.sceneCanvas = document.createElement('canvas');
+      const sceneCtx = this.sceneCanvas.getContext('2d', { alpha: true });
+      const overlay = canvas.getContext('2d', { alpha: true });
+      if (!sceneCtx || !overlay) throw new Error('Failed to get 2D context');
+      this.ctx = sceneCtx;
+      this.overlayCtx = overlay;
+      canvas.classList.add('overlay-layer');
+    } else {
+      // Note: no `desynchronized` - it causes tearing on many Android devices
+      const context = canvas.getContext('2d', { alpha: false });
+      if (!context) throw new Error('Failed to get 2D context');
+      this.sceneCanvas = canvas;
+      this.ctx = context;
+      this.overlayCtx = context;
+    }
 
     this.isMobile = window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
     this.quality = this.resolveQuality(settings.data.quality);
@@ -74,7 +111,24 @@ export class GameRenderer {
 
   private resolveQuality(q: QualityLevel): ConcreteQuality {
     if (q !== 'auto') return q;
-    return this.isMobile ? 'medium' : 'high';
+    // Auto starts at full quality everywhere and steps down only if frames are actually slow
+    return 'high';
+  }
+
+  /** True when the WebGL lighting pipeline is in use. */
+  public get lightingActive(): boolean {
+    return !!this.fx && !this.fx.lost;
+  }
+
+  /** Brief chromatic aberration after the player is hit. */
+  public triggerHitPulse(strength: number = 1) {
+    this.hitPulse = Math.max(this.hitPulse, strength);
+  }
+
+  /** Full-screen color flash (supernova, boss kill, obelisk). */
+  public flash(color: string, strength: number) {
+    this.flashRgb = parseColor(color);
+    this.flashAmount = Math.max(this.flashAmount, strength);
   }
 
   public attachParticles(particles: ParticleSystem) {
@@ -91,7 +145,10 @@ export class GameRenderer {
 
   private applyQualityToParticles() {
     const prof = QUALITY[this.quality];
-    glowSettings.enabled = prof.glows;
+    // With WebGL lighting the light map + bloom replace the Canvas2D glow sprites
+    glowSettings.enabled = prof.glows && !this.lightingActive;
+    Enemy.flashFill = this.lightingActive ? 'rgba(255, 255, 255, 0.38)' : '#ffffff';
+    this.fx?.setProfile(prof.fx);
     Enemy.detail = this.quality === 'high' ? 2 : this.quality === 'medium' ? 1 : 0;
     if (this.particlesRef) {
       this.particlesRef.maxParticles = prof.maxParticles;
@@ -135,11 +192,16 @@ export class GameRenderer {
     const prof = QUALITY[this.quality];
     this.dpr = Math.min(prof.dprCap, Math.max(1, window.devicePixelRatio || 1));
 
-    this.canvas.width = Math.round(this.viewWidth * this.dpr);
-    this.canvas.height = Math.round(this.viewHeight * this.dpr);
+    const pw = Math.round(this.viewWidth * this.dpr);
+    const ph = Math.round(this.viewHeight * this.dpr);
+    for (const c of [this.canvas, this.sceneCanvas]) {
+      c.width = pw;
+      c.height = ph;
+    }
     this.canvas.style.width = `${this.viewWidth}px`;
     this.canvas.style.height = `${this.viewHeight}px`;
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    this.fx?.resize(pw, ph, this.viewWidth, this.viewHeight);
 
     if (this.particlesRef) {
       this.particlesRef.viewW = this.viewWidth;
@@ -219,6 +281,10 @@ export class GameRenderer {
     const w = this.viewWidth;
     const h = this.viewHeight;
     const prof = QUALITY[this.quality];
+    const lit = this.lightingActive;
+    this.time += dt;
+    this.hitPulse = Math.max(0, this.hitPulse - dt * 3.2);
+    this.flashAmount = Math.max(0, this.flashAmount - dt * 2.2);
 
     // Frame-rate independent camera smoothing
     const targetCamX = player.x - w / 2;
@@ -237,12 +303,16 @@ export class GameRenderer {
     const camX = this.cameraX + offsetX;
     const camY = this.cameraY + offsetY;
 
-    // 1. Deep space outer void
-    ctx.fillStyle = '#03050c';
-    ctx.fillRect(0, 0, w, h);
+    // 1. Deep space outer void (with lighting the shader draws nebula + stars behind a transparent scene)
+    if (lit) {
+      ctx.clearRect(0, 0, w, h);
+    } else {
+      ctx.fillStyle = '#03050c';
+      ctx.fillRect(0, 0, w, h);
+    }
 
     // 2. Distant nebulas (cached glow sprites) & parallax stars
-    if (prof.nebulas) {
+    if (prof.nebulas && !lit) {
       for (const neb of this.nebulas) {
         const nx = neb.x - camX * 0.35 + w * 0.5;
         const ny = neb.y - camY * 0.35 + h * 0.5;
@@ -251,7 +321,7 @@ export class GameRenderer {
         drawGlow(ctx, nx, ny, neb.radius, neb.color);
       }
     }
-    for (const star of this.stars) {
+    for (const star of lit ? [] : this.stars) {
       const sx = ((star.x - camX * star.layer) % w + w) % w;
       const sy = ((star.y - camY * star.layer) % h + h) % h;
       ctx.fillStyle = star.color;
@@ -269,7 +339,8 @@ export class GameRenderer {
     const camCenterDist = Math.hypot(camX + w / 2, camY + h / 2);
     const edgeVisible = camCenterDist + halfDiag > arenaR;
 
-    ctx.fillStyle = 'rgba(5, 9, 20, 0.72)';
+    // Lit mode: a thinner floor so the nebula glimmers through the arena
+    ctx.fillStyle = lit ? 'rgba(4, 7, 16, 0.5)' : 'rgba(5, 9, 20, 0.72)';
     if (edgeVisible) {
       ctx.beginPath();
       ctx.arc(arenaX, arenaY, arenaR, 0, Math.PI * 2);
@@ -354,9 +425,9 @@ export class GameRenderer {
         ctx.font = '700 10px "JetBrains Mono", monospace';
         ctx.fillStyle = progress > 0 ? '#fbbf24' : '#c084fc';
         ctx.textAlign = 'center';
-        ctx.fillText(progress > 0 ? `VOID OBELISK ${Math.floor(progress * 100)}%` : 'VOID OBELISK', sx, sy - 26);
+        ctx.fillText(progress > 0 ? `OBELISK ${Math.floor(progress * 100)}%` : 'LEEREN-OBELISK', sx, sy - 26);
       } else {
-        this.drawEdgeArrow(sx, sy, '#c084fc', 1);
+        this.pendingArrows.push({ x: sx, y: sy, color: '#c084fc', scale: 1 });
       }
     }
 
@@ -543,7 +614,7 @@ export class GameRenderer {
       if (bx > -boss.radius * 2 && bx < w + boss.radius * 2 && by > -boss.radius * 2 && by < h + boss.radius * 2) {
         boss.render(ctx, camX, camY);
       } else {
-        this.drawEdgeArrow(bx, by, boss.color, 1.6);
+        this.pendingArrows.push({ x: bx, y: by, color: boss.color, scale: 1.6 });
       }
     }
 
@@ -605,16 +676,155 @@ export class GameRenderer {
       ctx.restore();
     }
 
-    // 14. Particles, shockwaves, floating text
-    particles.render(ctx, camX, camY);
+    // 14. Particles & shockwaves
+    particles.renderEffects(ctx, camX, camY);
 
-    // 15. Low-light crimson danger vignette (pre-rendered)
     const lightPct = player.light / player.maxLight;
-    if (lightPct < 0.32 && this.vignetteCanvas) {
-      const dangerIntensity = (1 - lightPct / 0.32) * (0.3 + Math.sin(performance.now() * 0.008) * 0.1);
-      ctx.globalAlpha = Math.max(0, Math.min(0.6, dangerIntensity));
+    const danger = lightPct < 0.32 ? (1 - lightPct / 0.32) * (0.75 + Math.sin(this.time * 8) * 0.25) : 0;
+
+    if (lit && this.fx) {
+      this.collectLights(player, enemies, boss, drops, weapons, playerProjectiles, enemyProjectiles, mortarZones, particles, obelisks, solarZones, camX, camY);
+      this.fx.render(this.sceneCanvas, this.lights, {
+        camX,
+        camY,
+        time: this.time,
+        // Unlit areas get darker as your light fades - the arena closes in on you
+        ambient: 0.32 + 0.28 * Math.min(1, lightPct),
+        danger: danger * 0.55,
+        hit: this.hitPulse,
+        flash: this.flashAmount * 0.55,
+        flashColor: this.flashRgb
+      });
+      const o = this.overlayCtx;
+      o.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+      o.clearRect(0, 0, w, h);
+    } else if (danger > 0 && this.vignetteCanvas) {
+      // 15. Low-light crimson danger vignette (pre-rendered)
+      ctx.globalAlpha = Math.max(0, Math.min(0.6, danger * 0.4));
       ctx.drawImage(this.vignetteCanvas, 0, 0, w, h);
       ctx.globalAlpha = 1;
+    }
+
+    // 16. Unlit overlay: floating combat text & off-screen pointers
+    particles.renderTexts(this.overlayCtx, camX, camY);
+    for (const arrow of this.pendingArrows) this.drawEdgeArrow(arrow.x, arrow.y, arrow.color, arrow.scale);
+    this.pendingArrows.length = 0;
+  }
+
+  private pendingArrows: Array<{ x: number; y: number; color: string; scale: number }> = [];
+
+  /** Gathers every light source of the frame (screen space) for the WebGL light map. */
+  private collectLights(
+    player: Player,
+    enemies: Enemy[],
+    boss: Boss | null,
+    drops: Drop[],
+    weapons: Weapon[],
+    playerProjectiles: PlayerProjectile[],
+    enemyProjectiles: EnemyProjectile[],
+    mortarZones: MortarZone[],
+    particles: ParticleSystem,
+    obelisks: VoidObelisk[],
+    solarZones: SolarBurnZone[],
+    camX: number,
+    camY: number
+  ) {
+    const L = this.lights;
+    L.clear();
+    const w = this.viewWidth;
+    const h = this.viewHeight;
+    const visible = (x: number, y: number, r: number) => x > -r && x < w + r && y > -r && y < h + r;
+
+    // Player: wide aura sized to the light radius plus a hot core (gentle flicker)
+    const psx = player.x - camX;
+    const psy = player.y - camY;
+    const skin = PLAYER_SKINS[player.skinId] ?? PLAYER_SKINS.cyan;
+    const pct = Math.max(0, Math.min(1, player.light / player.maxLight));
+    const flicker = 0.94 + Math.sin(this.time * 9.1) * 0.03 + Math.sin(this.time * 23.7) * 0.03;
+    const auraColor = player.overdriveTimer > 0 ? GOLD : skin.ringStyle === 'prismatic' ? hueRgb(this.time * 60) : parseColor(skin.primaryColor);
+    L.push(psx, psy, player.getLightRadius() * 1.3, auraColor, (0.42 + 0.5 * pct) * flicker);
+    L.push(psx, psy, 64, WHITE, 0.4 * flicker);
+
+    // Bosses & enemies glow in their own color
+    if (boss && !boss.isDefeated) {
+      const bx = boss.x - camX;
+      const by = boss.y - camY;
+      if (visible(bx, by, boss.radius * 6)) L.push(bx, by, boss.radius * 5.5, parseColor(boss.color), boss.isCharging ? 1.1 : 0.75);
+    }
+    for (const e of enemies) {
+      const ex = e.x - camX;
+      const ey = e.y - camY;
+      if (!visible(ex, ey, 80)) continue;
+      L.push(ex, ey, e.radius * (e.isElite ? 4.5 : 3.2), parseColor(e.color), e.isElite ? 0.5 : 0.24);
+    }
+
+    // Shots
+    for (const p of playerProjectiles) {
+      const x = p.x - camX;
+      const y = p.y - camY;
+      if (visible(x, y, 40)) L.push(x, y, Math.max(26, p.radius * 8), parseColor(p.color), 0.5);
+    }
+    for (const ep of enemyProjectiles) {
+      const x = ep.x - camX;
+      const y = ep.y - camY;
+      if (visible(x, y, 40)) L.push(x, y, Math.max(24, ep.radius * 7), parseColor(ep.color), 0.55);
+    }
+
+    // Pickups
+    for (const d of drops) {
+      const x = d.x - camX;
+      const y = d.y - camY;
+      if (!visible(x, y, 50)) continue;
+      const big = d.size === 'big';
+      L.push(x, y, big ? 55 : 30, parseColor(d.color), big ? 0.55 : 0.3);
+    }
+
+    // Zones & world objects
+    for (const sz of solarZones) {
+      const x = sz.x - camX;
+      const y = sz.y - camY;
+      if (visible(x, y, sz.radius * 2)) L.push(x, y, sz.radius * 1.8, ORANGE, 0.75 * Math.min(1, (sz.maxLife - sz.life) / 0.8));
+    }
+    for (const mz of mortarZones) {
+      const x = mz.x - camX;
+      const y = mz.y - camY;
+      if (visible(x, y, mz.radius * 2)) L.push(x, y, mz.radius * 1.4, RED, 0.25 + (mz.timer / mz.maxTime) * 0.55);
+    }
+    for (const ob of obelisks) {
+      const x = ob.x - camX;
+      const y = ob.y - camY;
+      const prog = Math.min(1, ob.charge / ob.maxCharge);
+      if (visible(x, y, ob.radius * 2)) L.push(x, y, ob.radius * 1.6, prog > 0 ? GOLD : VIOLET, 0.45 + prog * 0.5 + Math.sin(this.time * 3) * 0.05);
+    }
+
+    // Weapon emitters
+    for (const wpn of weapons) {
+      if (wpn instanceof BeaconWeapon) {
+        for (const b of wpn.beacons) L.push(b.x - camX, b.y - camY, 80, GOLD, 0.6);
+      } else if (wpn instanceof OrbitersWeapon) {
+        const c = parseColor(wpn.isEvolved ? '#f59e0b' : '#38bdf8');
+        for (const o of wpn.currentOrbPositions) L.push(o.x - camX, o.y - camY, 46, c, 0.55);
+      } else if (wpn instanceof RadianceWeapon) {
+        const len = player.getLightRadius();
+        const c = parseColor(wpn.thermalCharge > 0.6 ? '#fbbf24' : '#00f3ff');
+        for (const a of wpn.getAngles()) {
+          for (let t = 0.2; t <= 1.01; t += 0.2) {
+            L.push(psx + Math.cos(a) * len * t, psy + Math.sin(a) * len * t, 44, c, 0.16 + wpn.thermalCharge * 0.16);
+          }
+        }
+      }
+    }
+
+    // Explosions & shockwaves flash the surroundings
+    for (const sw of particles.shockwaves) {
+      const x = sw.x - camX;
+      const y = sw.y - camY;
+      const r = sw.radius * 1.2 + 30;
+      if (!visible(x, y, r)) continue;
+      const fade = 1 - sw.life / sw.maxLife;
+      // Small hit shockwaves only flicker; big blasts (supernova, boss) light up the arena
+      const strength = sw.maxRadius < 100 ? 0.22 : Math.min(1, 0.3 + sw.width * 0.08);
+      L.push(x, y, r, parseColor(sw.color), fade * fade * strength);
     }
   }
 
@@ -709,7 +919,7 @@ export class GameRenderer {
     const angle = Math.atan2(sy - h / 2, sx - w / 2);
     const indX = Math.max(margin, Math.min(w - margin, w / 2 + Math.cos(angle) * (w * 0.45)));
     const indY = Math.max(margin + 70, Math.min(h - margin, h / 2 + Math.sin(angle) * (h * 0.42)));
-    const ctx = this.ctx;
+    const ctx = this.overlayCtx;
     ctx.save();
     ctx.translate(indX, indY);
     ctx.rotate(angle);
@@ -727,4 +937,12 @@ export class GameRenderer {
     ctx.fill();
     ctx.restore();
   }
+}
+
+/** Rainbow color for the prismatic skin's light. */
+function hueRgb(deg: number): [number, number, number] {
+  const h = ((deg % 360) + 360) % 360 / 60;
+  const x = 1 - Math.abs((h % 2) - 1);
+  const [r, g, b] = h < 1 ? [1, x, 0] : h < 2 ? [x, 1, 0] : h < 3 ? [0, 1, x] : h < 4 ? [0, x, 1] : h < 5 ? [x, 0, 1] : [1, 0, x];
+  return [r * 0.6 + 0.4, g * 0.6 + 0.4, b * 0.6 + 0.4];
 }

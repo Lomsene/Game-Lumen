@@ -203,6 +203,11 @@
               🎨 SKINS
             </button>
           </div>
+          <button id="btn-open-achievements" class="btn-secondary btn-achievements">
+            <span class="btn-icon">🏆</span>
+            ERFOLGE & BESTENLISTE
+            <span id="menu-achievement-count" class="ach-count-badge">0/0</span>
+          </button>
           <div style="display:flex; gap:10px; width:100%;">
             <button id="btn-open-guide" class="btn-ghost" style="flex:1;">
               <span class="btn-icon">📖</span>
@@ -262,6 +267,7 @@
           <div id="gameover-orb" class="gameover-orb"></div>
           <h2 id="gameover-title">DEIN LICHT IST ERLOSCHEN</h2>
           <p id="gameover-subtitle">Die Dunkelheit hat dich verschlungen.</p>
+          <div id="gameover-record" class="gameover-record hidden"></div>
         </div>
 
         <div class="run-stats-grid">
@@ -288,6 +294,23 @@
           <div class="stat-card highlight">
             <span class="stat-title">VERDIENTE SPLITTER</span>
             <span id="stat-shards" class="stat-big">✨ 0</span>
+          </div>
+        </div>
+
+        <div id="gameover-mini-stats" class="gameover-mini-stats"></div>
+
+        <div class="gameover-details">
+          <div class="gameover-block">
+            <h3>SCHADEN NACH QUELLE</h3>
+            <div id="gameover-damage" class="damage-list"></div>
+          </div>
+          <div class="gameover-block">
+            <h3>DEIN BUILD</h3>
+            <div id="gameover-build" class="build-chips"></div>
+          </div>
+          <div id="gameover-achievements-block" class="gameover-block hidden">
+            <h3>NEUE ERFOLGE</h3>
+            <div id="gameover-achievements" class="build-chips"></div>
           </div>
         </div>
 
@@ -337,6 +360,26 @@
           </div>
         </div>
         <button id="btn-close-guide" class="btn-primary">VERSTANDEN</button>
+      </div>
+    </div>
+
+    <!-- ACHIEVEMENTS & LEADERBOARD -->
+    <div id="achievements-modal" class="modal-overlay hidden">
+      <div class="achievements-container">
+        <h2>🏆 ERFOLGE & BESTENLISTE</h2>
+        <div class="achievements-columns">
+          <div class="achievements-side">
+            <h3>Beste Läufe</h3>
+            <ol id="leaderboard-list" class="leaderboard-list"></ol>
+            <h3>Gesamt</h3>
+            <p id="lifetime-stats" class="lifetime-stats"></p>
+          </div>
+          <div class="achievements-main">
+            <h3>Erfolge</h3>
+            <div id="achievements-list" class="achievements-list"></div>
+          </div>
+        </div>
+        <button id="btn-close-achievements" class="btn-primary">ZURÜCK</button>
       </div>
     </div>
 

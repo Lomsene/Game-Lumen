@@ -1,3 +1,4 @@
+import { storage } from '../engine/Storage';
 /**
  * The Forge (Die Schmiede) - Meta-progression system for AETHER: ECLIPSE.
  * Handles persistent Shards currency, permanent upgrades, and Highscores via LocalStorage.
@@ -317,6 +318,21 @@ export const FORGE_UPGRADES: Record<string, ForgeUpgradeDef> = {
   }
 };
 
+export interface RunRecord {
+  time: number;
+  score: number;
+  kills: number;
+  bosses: number;
+  classId: PlayerClassId;
+  date: number; // epoch ms
+}
+
+export interface RunRecordResult {
+  newBestTime: boolean;
+  newBestScore: boolean;
+  rank: number; // 1-based leaderboard position, 0 if not placed
+}
+
 export class ForgeManager {
   public shards: number = 0;
   public totalShardsCollected: number = 0;
@@ -331,6 +347,8 @@ export class ForgeManager {
   public selectedSkin: PlayerSkinId = 'cyan';
 
   public bestBossesDefeated: number = 0;
+  public topRuns: RunRecord[] = [];
+  public static readonly LEADERBOARD_SIZE = 5;
   public totalRuns: number = 0;
 
   // Kept for compatibility with existing save games
@@ -342,7 +360,7 @@ export class ForgeManager {
 
   public load() {
     try {
-      const data = localStorage.getItem(this.STORAGE_KEY);
+      const data = storage.get(this.STORAGE_KEY);
       if (data) {
         const parsed = JSON.parse(data);
         this.shards = parsed.shards ?? 0;
@@ -359,6 +377,7 @@ export class ForgeManager {
           : ['cyan'];
         this.selectedSkin = parsed.selectedSkin ?? 'cyan';
         this.bestBossesDefeated = parsed.bestBossesDefeated ?? 0;
+        this.topRuns = Array.isArray(parsed.topRuns) ? parsed.topRuns : [];
         this.totalRuns = parsed.totalRuns ?? 0;
       }
     } catch (e) {
@@ -379,9 +398,10 @@ export class ForgeManager {
         unlockedSkins: this.unlockedSkins,
         selectedSkin: this.selectedSkin,
         bestBossesDefeated: this.bestBossesDefeated,
+        topRuns: this.topRuns,
         totalRuns: this.totalRuns
       };
-      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(data));
+      storage.set(this.STORAGE_KEY, JSON.stringify(data));
     } catch (e) {
       console.warn('Failed to save to localStorage', e);
     }
@@ -431,7 +451,23 @@ export class ForgeManager {
     this.save();
   }
 
-  public recordRun(survivalSeconds: number, score: number, bossesDefeated: number = 0) {
+  public recordRun(
+    survivalSeconds: number,
+    score: number,
+    bossesDefeated: number = 0,
+    kills: number = 0,
+    classId: PlayerClassId = this.selectedClass
+  ): RunRecordResult {
+    const newBestTime = survivalSeconds > this.bestSurvivalTime && this.bestSurvivalTime > 0;
+    const newBestScore = score > this.bestScore && this.bestScore > 0;
+
+    // Leaderboard ranked by survival time, score as tie-breaker
+    const entry: RunRecord = { time: survivalSeconds, score: Math.floor(score), kills, bosses: bossesDefeated, classId, date: Date.now() };
+    this.topRuns.push(entry);
+    this.topRuns.sort((a, b) => b.time - a.time || b.score - a.score);
+    this.topRuns = this.topRuns.slice(0, ForgeManager.LEADERBOARD_SIZE);
+    const rank = this.topRuns.indexOf(entry) + 1;
+
     this.totalRuns += 1;
     if (bossesDefeated > this.bestBossesDefeated) {
       this.bestBossesDefeated = bossesDefeated;
@@ -443,6 +479,7 @@ export class ForgeManager {
       this.bestScore = score;
     }
     this.save();
+    return { newBestTime, newBestScore, rank };
   }
 
   public getLevel(id: string): number {

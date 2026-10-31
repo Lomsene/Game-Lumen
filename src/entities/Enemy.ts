@@ -2,6 +2,7 @@ import { Player } from './Player';
 import { ParticleSystem } from '../engine/Particle';
 import { Drop } from './Drop';
 import { sound } from '../engine/Sound';
+import { runStats } from '../meta/RunStats';
 
 export type EnemyType =
   | 'mote'
@@ -66,11 +67,14 @@ export interface SolarBurnZone {
   damagePerSec: number;
   life: number;
   maxLife: number;
+  sourceId: string; // Damage attribution for run statistics
 }
 
 export class Enemy {
   /** Render detail set by the renderer: 2 = full, 1 = no trails, 0 = no trails & halos. */
   static detail: number = 2;
+  /** Body fill while hit-flashing; softened under WebGL bloom so packed swarms don't wash out to white. */
+  static flashFill: string = '#ffffff';
   public x: number;
   public y: number;
   public vx: number = 0;
@@ -315,6 +319,7 @@ export class Enemy {
       }
     }
 
+    runStats.recordDamage(Math.min(effectiveDmg, Math.max(0, this.hp)));
     this.hp -= effectiveDmg;
     this.hitFlashTimer = 0.1;
     if (isTick) {
@@ -792,7 +797,7 @@ export class Enemy {
     }
 
     if (isLit) {
-      ctx.fillStyle = isFlashing ? '#ffffff' : 'rgba(244, 63, 94, 0.22)';
+      ctx.fillStyle = isFlashing ? Enemy.flashFill : 'rgba(244, 63, 94, 0.22)';
       ctx.strokeStyle = isFlashing ? '#ffffff' : baseColor;
       ctx.lineWidth = 2.0;
     } else {
