@@ -23,7 +23,7 @@
         <div class="hud-top-row">
           <!-- Left: Light Bar & Text -->
           <div class="hud-light-box">
-            <span class="hud-light-label">LIGHT</span>
+            <span class="hud-light-label">LICHT</span>
             <div class="light-bar-track">
               <div id="hud-light-fill" class="light-bar-fill"></div>
             </div>
@@ -151,77 +151,58 @@
     <!-- MAIN MENU SCREEN -->
     <div id="main-menu" class="screen-overlay">
       <div class="menu-content">
-        <div class="title-container">
-          <div class="lumen-orb-anim"></div>
-          <h1 class="game-title">AETHER</h1>
-          <p class="game-subtitle">ECLIPSE • Dein Licht ist das Einzige, was dich am Leben erhält.</p>
-        </div>
+        <div class="menu-hero">
+          <div class="title-container">
+            <div class="lumen-orb-anim"></div>
+            <h1 class="game-title">AETHER</h1>
+            <span class="game-title-sub">ECLIPSE</span>
+            <p class="game-subtitle">Dein Licht ist das Einzige, was dich am Leben erhält.</p>
+          </div>
 
-        <div class="menu-stats-bar">
-          <div class="stat-pill">
-            <span class="stat-icon">✨</span>
-            <span class="stat-label">SPLITTER:</span>
-            <span id="menu-shards" class="stat-value">0</span>
+          <div class="menu-stats">
+            <div class="menu-stat">
+              <span class="menu-stat-label">✨ Splitter</span>
+              <span id="menu-shards" class="menu-stat-value gold">0</span>
+            </div>
+            <div class="menu-stat">
+              <span class="menu-stat-label">⏱️ Rekord</span>
+              <span id="menu-record" class="menu-stat-value">0:00</span>
+            </div>
+            <div class="menu-stat">
+              <span class="menu-stat-label">💀 Bosse</span>
+              <span id="menu-boss-record" class="menu-stat-value">0</span>
+            </div>
           </div>
-          <div class="stat-pill">
-            <span class="stat-icon">⏱️</span>
-            <span class="stat-label">REKORD:</span>
-            <span id="menu-record" class="stat-value">0:00</span>
-          </div>
-          <div class="stat-pill">
-            <span class="stat-icon">💀</span>
-            <span class="stat-label">BOSSE:</span>
-            <span id="menu-boss-record" class="stat-value">0</span>
-          </div>
-        </div>
 
-        <div class="menu-stats-bar" style="margin-top:-16px; margin-bottom:20px;">
-          <div class="stat-pill">
-            <span class="stat-label">KLASSE:</span>
-            <span id="menu-active-class" class="stat-value" style="color:#fbbf24;">◎ Aether-Wanderer</span>
-          </div>
-          <div class="stat-pill">
-            <span class="stat-label">SKIN:</span>
-            <span id="menu-active-skin" class="stat-value">Aether-Kern</span>
+          <div class="menu-loadout">
+            <span id="menu-active-class" class="loadout-chip gold">◎ Aether-Wanderer</span>
+            <span id="menu-active-skin" class="loadout-chip">Aether-Kern</span>
           </div>
         </div>
 
-        <div class="menu-buttons">
-          <button id="btn-start-game" class="btn-primary">
+        <div class="menu-panel">
+          <button id="btn-start-game" class="btn-primary btn-start">
             <span class="btn-glow"></span>
             SPIEL STARTEN
           </button>
           <button id="btn-open-forge" class="btn-secondary">
             <span class="btn-icon">⚒️</span>
-            DIE SCHMIEDE (UPGRADES)
+            DIE SCHMIEDE
           </button>
-          <div style="display:flex; gap:10px; width:100%;">
-            <button id="btn-open-classes" class="btn-secondary" style="flex:1; font-size:12px; padding:10px 12px;">
-              ⚔️ KLASSEN
-            </button>
-            <button id="btn-open-skins" class="btn-secondary" style="flex:1; font-size:12px; padding:10px 12px; border-color:rgba(56,189,248,0.45); color:#38bdf8;">
-              🎨 SKINS
-            </button>
+          <div class="menu-row">
+            <button id="btn-open-classes" class="btn-secondary">⚔️ KLASSEN</button>
+            <button id="btn-open-skins" class="btn-secondary btn-cyan">🎨 SKINS</button>
           </div>
           <button id="btn-open-achievements" class="btn-secondary btn-achievements">
             <span class="btn-icon">🏆</span>
-            ERFOLGE & BESTENLISTE
+            ERFOLGE
             <span id="menu-achievement-count" class="ach-count-badge">0/0</span>
           </button>
-          <div style="display:flex; gap:10px; width:100%;">
-            <button id="btn-open-guide" class="btn-ghost" style="flex:1;">
-              <span class="btn-icon">📖</span>
-              ANLEITUNG
-            </button>
-            <button id="btn-open-settings" class="btn-ghost" style="flex:1;">
-              <span class="btn-icon">⚙️</span>
-              EINSTELLUNGEN
-            </button>
+          <div class="menu-row">
+            <button id="btn-open-guide" class="btn-ghost">📖 ANLEITUNG</button>
+            <button id="btn-open-settings" class="btn-ghost">⚙️ OPTIONEN</button>
           </div>
-        </div>
-
-        <div class="menu-footer">
-          <span>Endloser Survival-Roguelite • Wie lange hält dein Licht?</span>
+          <div class="menu-footer">Endloser Survival-Roguelite • Wie lange hält dein Licht?</div>
         </div>
       </div>
     </div>
@@ -409,10 +390,10 @@
           <h3>Grafik</h3>
           <label class="setting-row"><span>Qualität</span>
             <select id="set-quality">
-              <option value="auto">Automatisch (empfohlen)</option>
+              <option value="auto">Auto (empfohlen)</option>
               <option value="high">Hoch</option>
               <option value="medium">Mittel</option>
-              <option value="low">Niedrig (Akku sparen)</option>
+              <option value="low">Niedrig (Akku)</option>
             </select>
           </label>
           <label class="setting-row"><span>Bildschirmwackeln</span><input id="set-shake" type="checkbox" /></label>
@@ -422,7 +403,7 @@
           <h3>Steuerung</h3>
           <label class="setting-row"><span>Joystick</span>
             <select id="set-joystick">
-              <option value="floating">Schwebend (wo du tippst)</option>
+              <option value="floating">Schwebend</option>
               <option value="fixed">Fest (unten)</option>
             </select>
           </label>

@@ -2305,3 +2305,309 @@ html, body {
     padding: 16px 20px;
   }
 }
+
+/* =======================================================
+   v3 DESIGN PASS: MENU, BUTTONS, SETTINGS, PAUSE
+   ======================================================= */
+
+/* Main menu: the WebGL nebula + idle orb are the backdrop - no opaque card on top */
+#main-menu {
+  /* The overlay scrolls, not .menu-content: a scroll container would clip the orb glow into a hard rectangle */
+  overflow-y: auto;
+  background: radial-gradient(ellipse at 50% 45%, rgba(3, 7, 18, 0.15) 0%, rgba(3, 7, 18, 0.55) 55%, rgba(3, 7, 18, 0.9) 100%);
+}
+.menu-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+  width: min(420px, 92vw);
+  max-width: none;
+  max-height: none;
+  overflow: visible;
+  margin: auto; /* centers, but stays scrollable from the top when taller than the screen */
+  padding: 24px 16px;
+  background: none;
+  border: none;
+  box-shadow: none;
+  text-align: center;
+}
+.menu-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+}
+.title-container {
+  margin-bottom: 0;
+}
+.game-title {
+  letter-spacing: 12px;
+  margin-right: -12px; /* letter-spacing adds trailing space - keep the word optically centered */
+  text-shadow: 0 0 24px rgba(0, 243, 255, 0.6), 0 0 60px rgba(0, 243, 255, 0.25);
+}
+.game-title-sub {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 10px;
+  margin-right: -10px;
+  color: var(--neon-gold);
+  text-shadow: 0 0 12px rgba(251, 191, 36, 0.5);
+}
+.game-subtitle {
+  font-size: 13.5px;
+  margin-top: 10px;
+}
+
+/* Orb: transform-only pulse. Animating box-shadow repaints every frame and also
+   overrode the skin-colored glow the menu sets inline. */
+.lumen-orb-anim {
+  animation: orbPulse 3s infinite alternate ease-in-out;
+}
+@keyframes orbPulse {
+  from { transform: scale(0.94); }
+  to { transform: scale(1.06); }
+}
+
+.menu-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  width: 100%;
+  background: rgba(7, 13, 29, 0.72);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+}
+.menu-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 4px;
+}
+.menu-stat + .menu-stat {
+  border-left: 1px solid rgba(56, 189, 248, 0.12);
+}
+.menu-stat-label {
+  font-size: 10.5px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.menu-stat-value {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text-main);
+}
+.menu-stat-value.gold {
+  color: var(--neon-gold);
+}
+.menu-loadout {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.loadout-chip {
+  padding: 4px 12px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--neon-cyan);
+  background: rgba(7, 13, 29, 0.72);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+}
+.loadout-chip.gold {
+  color: var(--neon-gold);
+  border-color: rgba(251, 191, 36, 0.35);
+}
+
+.menu-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+.menu-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.btn-start {
+  padding: 16px 28px;
+  font-size: 16px;
+  letter-spacing: 4px;
+}
+.btn-cyan {
+  border-color: rgba(56, 189, 248, 0.45);
+  color: var(--neon-blue);
+}
+.btn-achievements .ach-count-badge {
+  margin-left: 4px;
+}
+.menu-footer {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* Buttons: one line, icon inline, press feedback for touch (no hover on phones),
+   visible keyboard focus, and only cheap properties transitioned */
+.btn-primary, .btn-secondary, .btn-ghost {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.15s ease, box-shadow 0.2s ease, border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease;
+}
+.btn-secondary {
+  background: rgba(10, 18, 38, 0.82);
+}
+.btn-primary:active, .btn-secondary:active, .btn-ghost:active,
+.gift-btn:active, .forge-tab-btn:active {
+  transform: scale(0.97);
+}
+.btn-primary:focus-visible, .btn-secondary:focus-visible, .btn-ghost:focus-visible,
+.gift-btn:focus-visible, .forge-tab-btn:focus-visible {
+  outline: 2px solid var(--neon-cyan);
+  outline-offset: 3px;
+}
+@media (hover: none) {
+  /* A tap leaves :hover stuck on touch screens - don't lift buttons there */
+  .btn-primary:hover, .btn-secondary:hover, .btn-ghost:hover {
+    transform: none;
+  }
+}
+
+/* Settings: toggle switches instead of native checkboxes */
+.setting-row input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex-shrink: 0;
+  width: 44px;
+  height: 24px;
+  margin: 0;
+  border-radius: 999px;
+  background: rgba(51, 65, 85, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+.setting-row input[type="checkbox"]::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #cbd5e1;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s ease;
+}
+.setting-row input[type="checkbox"]:checked {
+  background: rgba(0, 243, 255, 0.28);
+  border-color: var(--neon-cyan);
+}
+.setting-row input[type="checkbox"]:checked::after {
+  transform: translateX(20px);
+  background: var(--neon-cyan);
+  box-shadow: 0 0 8px rgba(0, 243, 255, 0.7);
+}
+.setting-row input[type="checkbox"]:focus-visible,
+.setting-row select:focus-visible {
+  outline: 2px solid var(--neon-cyan);
+  outline-offset: 2px;
+}
+.setting-row select {
+  max-width: 62%;
+  padding: 6px 28px 6px 10px;
+  appearance: none;
+  -webkit-appearance: none;
+  background: #0f172a url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2300f3ff' stroke-width='1.6'/%3E%3C/svg%3E") no-repeat right 10px center;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.setting-row:hover {
+  background: rgba(15, 23, 42, 0.85);
+}
+
+/* Pause: empty build lists */
+.pause-lists li.empty {
+  justify-content: flex-start;
+  color: var(--text-dim);
+  font-style: italic;
+  border-bottom: none;
+}
+
+/* Phone landscape: hero left, actions right - fits without scrolling */
+@media (max-height: 540px) and (orientation: landscape) {
+  .menu-content {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: center;
+    gap: 28px;
+    width: min(780px, 94vw);
+    max-width: none;
+    max-height: none;
+    overflow: visible;
+    padding: 12px max(16px, env(safe-area-inset-right, 16px)) 12px max(16px, env(safe-area-inset-left, 16px));
+  }
+  .menu-hero {
+    gap: 12px;
+  }
+  .lumen-orb-anim {
+    width: 44px;
+    height: 44px;
+    margin-bottom: 6px;
+  }
+  .game-title {
+    font-size: 36px;
+    padding: 0;
+    letter-spacing: 9px;
+    margin-right: -9px;
+  }
+  .game-title-sub {
+    font-size: 11px;
+  }
+  .game-subtitle {
+    font-size: 11.5px;
+    margin-top: 6px;
+  }
+  .menu-stat {
+    padding: 6px 4px;
+  }
+  .menu-stat-value {
+    font-size: 15px;
+  }
+  .menu-panel, .menu-row {
+    gap: 8px;
+  }
+  .btn-start {
+    padding: 12px 20px;
+    font-size: 14px;
+  }
+  .menu-panel .btn-secondary, .menu-panel .btn-ghost {
+    padding: 9px 12px;
+    font-size: 12px;
+    letter-spacing: 1.5px;
+  }
+  .menu-footer {
+    display: none;
+  }
+  .pause-actions .btn-primary, .pause-actions .btn-secondary, .pause-actions .btn-ghost {
+    padding: 10px 12px;
+    font-size: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lumen-orb-anim, .gift-card, .hud-toast.toast-in {
+    animation: none !important;
+  }
+}

@@ -181,23 +181,28 @@ const NEBULA_FS = `#version 300 es
 precision highp float;
 in vec2 vUv;
 out vec4 outColor;
-float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-float noise(vec2 p) {
+// Periodic lattice noise: every term repeats over the texture, so it tiles without seams
+float hash(vec2 p, float per) {
+  p = mod(p, per);
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+float noise(vec2 p, float per) {
   vec2 i = floor(p), f = fract(p);
   vec2 u = f * f * (3.0 - 2.0 * f);
-  return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y);
+  return mix(mix(hash(i, per), hash(i + vec2(1, 0), per), u.x), mix(hash(i + vec2(0, 1), per), hash(i + vec2(1, 1), per), u.x), u.y);
 }
-float fbm(vec2 p) {
+float fbm(vec2 p, float per) {
   float v = 0.0, a = 0.5;
-  for (int i = 0; i < 6; i++) { v += a * noise(p); p = p * 2.03 + 17.0; a *= 0.5; }
+  for (int i = 0; i < 6; i++) { v += a * noise(p, per); p = p * 2.0 + 17.0; per *= 2.0; a *= 0.5; }
   return v;
 }
 void main() {
+  // Scale factors keep an integer period across the texture: 5, 5*0.6 = 3, 5*1.6 = 8
   vec2 p = vUv * 5.0;
   // Domain warping gives the wispy, flowing nebula look
-  vec2 q = vec2(fbm(p), fbm(p + 5.2));
-  float n = fbm(p + 3.0 * q);
-  float m = fbm(p * 0.6 + q * 2.0 + 9.0);
+  vec2 q = vec2(fbm(p, 5.0), fbm(p + 5.2, 5.0));
+  float n = fbm(p + 3.0 * q, 5.0);
+  float m = fbm(p * 0.6 + q * 2.0 + 9.0, 3.0);
   vec3 deep = vec3(0.012, 0.016, 0.045);
   vec3 violet = vec3(0.20, 0.05, 0.34);
   vec3 cyan = vec3(0.02, 0.20, 0.32);
@@ -207,7 +212,7 @@ void main() {
   col = mix(col, cyan, smoothstep(0.45, 0.9, m) * 0.7);
   col = mix(col, rose, smoothstep(0.62, 0.95, n * m * 1.6) * 0.6);
   // Dark dust lanes
-  col *= 0.55 + 0.6 * smoothstep(0.2, 0.75, fbm(p * 1.7 + q * 3.0));
+  col *= 0.55 + 0.6 * smoothstep(0.2, 0.75, fbm(p * 1.6 + q * 3.0, 8.0));
   outColor = vec4(col, 1.0);
 }`;
 
@@ -445,7 +450,7 @@ export class PostFX {
     return { fb, tex, w, h };
   }
 
-  /** Renders the procedural nebula once into a mirrored-repeat texture. */
+  /** Renders the procedural nebula once into a seamlessly repeating texture. */
   private generateNebula(): WebGLTexture {
     const gl = this.gl;
     const size = 1024;
@@ -460,8 +465,8 @@ export class PostFX {
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.deleteFramebuffer(rt.fb);
     gl.bindTexture(gl.TEXTURE_2D, rt.tex);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.MIRRORED_REPEAT);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.MIRRORED_REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
     return rt.tex;
   }
 

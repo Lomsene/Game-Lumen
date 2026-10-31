@@ -83,8 +83,8 @@ export class MenuUI {
         <div><span>LICHT</span><b>${Math.ceil(player.light)}/${player.maxLight}</b></div>
       </div>
       <div class="pause-lists">
-        <div><h4>WAFFEN</h4><ul>${weaponRows || '<li>-</li>'}</ul></div>
-        <div><h4>UPGRADES</h4><ul>${passiveRows || '<li>-</li>'}</ul></div>
+        <div><h4>WAFFEN</h4><ul>${weaponRows || '<li class="empty">Keine</li>'}</ul></div>
+        <div><h4>UPGRADES</h4><ul>${passiveRows || '<li class="empty">Noch keine</li>'}</ul></div>
       </div>`;
   }
 
