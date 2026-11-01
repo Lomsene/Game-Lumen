@@ -15,25 +15,28 @@
     <!-- Canvas for gameplay rendering -->
     <canvas id="game-canvas"></canvas>
 
-    <!-- Ingame HUD matching user screenshot -->
+    <!-- Ingame HUD -->
     <div id="hud" class="hud-overlay hidden">
       <!-- Top HUD Area -->
       <div class="hud-top-container">
-        <!-- Top Row: Light | Timer | Score -->
+        <!-- Top Row: Light | Timer & Phase | Score -->
         <div class="hud-top-row">
           <!-- Left: Light Bar & Text -->
           <div class="hud-light-box">
-            <span class="hud-light-label">LICHT</span>
+            <span class="hud-light-label" data-i18n="hud_light">LICHT</span>
             <div class="light-bar-track">
               <div id="hud-light-fill" class="light-bar-fill"></div>
             </div>
             <span id="hud-light-text" class="hud-light-value">100 / 100</span>
           </div>
 
-          <!-- Center: Timer & Phase -->
+          <!-- Center: Timer & Phase & Difficulty Badge -->
           <div class="hud-center-box">
             <div id="hud-timer" class="hud-timer">0:00</div>
-            <div id="hud-phase-name" class="hud-phase-name">THE FIRST DARK</div>
+            <div class="hud-phase-row">
+              <span id="hud-phase-name" class="hud-phase-name">THE FIRST DARK</span>
+              <span id="hud-diff-badge" class="hud-diff-badge">EKLIPSE</span>
+            </div>
           </div>
 
           <!-- Right: Score -->
@@ -41,7 +44,7 @@
             <div class="hud-score-content">
               <div id="hud-score" class="hud-score">0</div>
               <div class="hud-score-sub">
-                <span class="hud-score-label">SCORE</span>
+                <span class="hud-score-label" data-i18n="hud_score">SCORE</span>
                 <span id="hud-multiplier" class="hud-multiplier hidden">x1.0</span>
               </div>
             </div>
@@ -87,15 +90,15 @@
 
       <!-- Bottom Dash & Supernova Indicators -->
       <div class="hud-bottom">
-        <div id="dash-indicator" class="dash-circle-box" title="Dash (Leertaste / Shift / Rechtsklick)">
+        <div id="dash-indicator" class="dash-circle-box" data-i18n-title="hud_dash_tooltip" title="Dash (Leertaste / Shift / Rechtsklick)">
           <svg class="dash-ring-svg" viewBox="0 0 60 60">
             <circle class="dash-ring-bg" cx="30" cy="30" r="24"></circle>
             <circle id="dash-ring-progress" class="dash-ring-fg" cx="30" cy="30" r="24"></circle>
           </svg>
-          <span class="dash-text">DASH</span>
+          <span class="dash-text" data-i18n="hud_dash_label">DASH</span>
         </div>
 
-        <div id="supernova-indicator" class="dash-circle-box supernova-circle-box nova-ready" title="Supernova: wird durch Kills geladen, opfert 50% Licht (Taste R / F)">
+        <div id="supernova-indicator" class="dash-circle-box supernova-circle-box nova-ready" data-i18n-title="hud_supernova_tooltip" title="Supernova: wird durch Kills geladen, opfert 50% Licht (Taste R / F)">
           <svg class="dash-ring-svg" viewBox="0 0 60 60">
             <circle class="dash-ring-bg nova-ring-bg" cx="30" cy="30" r="24"></circle>
             <circle id="supernova-ring-progress" class="dash-ring-fg nova-ring-fg" cx="30" cy="30" r="24"></circle>
@@ -130,7 +133,7 @@
       <div class="gift-container">
         <div class="gift-header">
           <span id="gift-level-label" class="gift-level-tag">LEVEL 2</span>
-          <h2 class="gift-title">WÄHLE DEINE GABE</h2>
+          <h2 class="gift-title" data-i18n="gift_title">WÄHLE DEINE GABE</h2>
         </div>
 
         <div id="gift-cards" class="gift-cards-grid">
@@ -141,7 +144,7 @@
           <button id="gift-reroll-btn" class="gift-btn btn-reroll">
             REROLL (<span id="gift-reroll-count">1</span>)
           </button>
-          <button id="gift-skip-btn" class="gift-btn btn-skip">
+          <button id="gift-skip-btn" class="gift-btn btn-skip" data-i18n="gift_skip_btn">
             ÜBERSPRINGEN • +12 LICHT
           </button>
         </div>
@@ -152,24 +155,32 @@
     <div id="main-menu" class="screen-overlay">
       <div class="menu-content">
         <div class="menu-hero">
+          <!-- Quick Language Switcher Button -->
+          <div class="menu-top-bar">
+            <button id="btn-lang-toggle" class="btn-lang-toggle" title="Sprache wechseln / Switch language">
+              <span class="lang-icon">🌐</span>
+              <span id="btn-lang-code">DE</span>
+            </button>
+          </div>
+
           <div class="title-container">
             <div class="lumen-orb-anim"></div>
-            <h1 class="game-title">AETHER</h1>
-            <span class="game-title-sub">ECLIPSE</span>
-            <p class="game-subtitle">Dein Licht ist das Einzige, was dich am Leben erhält.</p>
+            <h1 class="game-title" data-i18n="game_title">AETHER</h1>
+            <span class="game-title-sub" data-i18n="game_title_sub">ECLIPSE</span>
+            <p class="game-subtitle" data-i18n="game_subtitle">Dein Licht ist das Einzige, was dich am Leben erhält.</p>
           </div>
 
           <div class="menu-stats">
             <div class="menu-stat">
-              <span class="menu-stat-label">✨ Splitter</span>
+              <span class="menu-stat-label" data-i18n="menu_stat_shards">✨ Splitter</span>
               <span id="menu-shards" class="menu-stat-value gold">0</span>
             </div>
             <div class="menu-stat">
-              <span class="menu-stat-label">⏱️ Rekord</span>
+              <span class="menu-stat-label" data-i18n="menu_stat_record">⏱️ Rekord</span>
               <span id="menu-record" class="menu-stat-value">0:00</span>
             </div>
             <div class="menu-stat">
-              <span class="menu-stat-label">💀 Bosse</span>
+              <span class="menu-stat-label" data-i18n="menu_stat_bosses">💀 Bosse</span>
               <span id="menu-boss-record" class="menu-stat-value">0</span>
             </div>
           </div>
@@ -181,28 +192,52 @@
         </div>
 
         <div class="menu-panel">
+          <!-- Difficulty Selector -->
+          <div class="difficulty-picker">
+            <div class="diff-btn-group" id="menu-diff-group">
+              <button type="button" class="diff-btn" data-diff="easy">
+                <span class="diff-icon">🌅</span>
+                <span class="diff-name" data-i18n="diff_easy_title">DÄMMERUNG</span>
+                <span class="diff-sub" data-i18n="diff_easy_sub">Leicht</span>
+              </button>
+              <button type="button" class="diff-btn active" data-diff="normal">
+                <span class="diff-icon">🌑</span>
+                <span class="diff-name" data-i18n="diff_normal_title">EKLIPSE</span>
+                <span class="diff-sub" data-i18n="diff_normal_sub">Standard</span>
+              </button>
+              <button type="button" class="diff-btn" data-diff="hard">
+                <span class="diff-icon">💀</span>
+                <span class="diff-name" data-i18n="diff_hard_title">ABGRUND</span>
+                <span class="diff-sub" data-i18n="diff_hard_sub">Hardcore</span>
+              </button>
+            </div>
+            <div id="diff-description-box" class="diff-description" data-i18n="diff_normal_desc">
+              Das klassische Überlebenserlebnis. Die Finsternis prüft dein Licht unerbittlich.
+            </div>
+          </div>
+
           <button id="btn-start-game" class="btn-primary btn-start">
             <span class="btn-glow"></span>
-            SPIEL STARTEN
+            <span data-i18n="menu_btn_start">SPIEL STARTEN</span>
           </button>
           <button id="btn-open-forge" class="btn-secondary">
             <span class="btn-icon">⚒️</span>
-            DIE SCHMIEDE
+            <span data-i18n="menu_btn_forge">DIE SCHMIEDE</span>
           </button>
           <div class="menu-row">
-            <button id="btn-open-classes" class="btn-secondary">⚔️ KLASSEN</button>
-            <button id="btn-open-skins" class="btn-secondary btn-cyan">🎨 SKINS</button>
+            <button id="btn-open-classes" class="btn-secondary" data-i18n="menu_btn_classes">⚔️ KLASSEN</button>
+            <button id="btn-open-skins" class="btn-secondary btn-cyan" data-i18n="menu_btn_skins">🎨 SKINS</button>
           </div>
           <button id="btn-open-achievements" class="btn-secondary btn-achievements">
             <span class="btn-icon">🏆</span>
-            ERFOLGE
+            <span data-i18n="menu_btn_achievements">ERFOLGE</span>
             <span id="menu-achievement-count" class="ach-count-badge">0/0</span>
           </button>
           <div class="menu-row">
-            <button id="btn-open-guide" class="btn-ghost">📖 ANLEITUNG</button>
-            <button id="btn-open-settings" class="btn-ghost">⚙️ OPTIONEN</button>
+            <button id="btn-open-guide" class="btn-ghost" data-i18n="menu_btn_guide">📖 ANLEITUNG</button>
+            <button id="btn-open-settings" class="btn-ghost" data-i18n="menu_btn_settings">⚙️ OPTIONEN</button>
           </div>
-          <div class="menu-footer">Endloser Survival-Roguelite • Wie lange hält dein Licht?</div>
+          <div class="menu-footer" data-i18n="game_footer">Endloser Survival-Roguelite • Wie lange hält dein Licht?</div>
         </div>
       </div>
     </div>
@@ -213,21 +248,21 @@
         <div class="forge-header">
           <div class="forge-title-group">
             <span class="forge-icon">⚒️</span>
-            <h2>DIE SCHMIEDE</h2>
+            <h2 data-i18n="forge_title">DIE SCHMIEDE</h2>
           </div>
           <div class="forge-currency">
-            <span>✨ Splitter:</span>
+            <span data-i18n="forge_shards">✨ Splitter:</span>
             <span id="forge-shards-display" class="currency-val">0</span>
           </div>
         </div>
 
         <div class="forge-tabs">
-          <button class="forge-tab-btn active" data-tab="upgrades">⚒️ UPGRADES</button>
-          <button class="forge-tab-btn" data-tab="classes">⚔️ KLASSEN & MEISTERSCHAFT</button>
-          <button class="forge-tab-btn" data-tab="skins">🎨 LICHT-SKINS</button>
+          <button class="forge-tab-btn active" data-tab="upgrades" data-i18n="forge_tab_upgrades">⚒️ UPGRADES</button>
+          <button class="forge-tab-btn" data-tab="classes" data-i18n="forge_tab_classes">⚔️ KLASSEN & MEISTERSCHAFT</button>
+          <button class="forge-tab-btn" data-tab="skins" data-i18n="forge_tab_skins">🎨 LICHT-SKINS</button>
         </div>
 
-        <p class="forge-desc">
+        <p class="forge-desc" data-i18n="forge_desc">
           Verwende im Dunkeln gesammelte Splitter für dauerhafte Verbesserungen, neue Klassen & Meisterschaften sowie exklusive Licht-Skins!
         </p>
 
@@ -236,7 +271,7 @@
         </div>
 
         <div class="forge-footer">
-          <button id="btn-close-forge" class="btn-primary">ZURÜCK ZUM MENÜ</button>
+          <button id="btn-close-forge" class="btn-primary" data-i18n="forge_btn_back">ZURÜCK ZUM MENÜ</button>
         </div>
       </div>
     </div>
@@ -246,34 +281,34 @@
       <div class="gameover-container">
         <div class="gameover-header">
           <div id="gameover-orb" class="gameover-orb"></div>
-          <h2 id="gameover-title">DEIN LICHT IST ERLOSCHEN</h2>
-          <p id="gameover-subtitle">Die Dunkelheit hat dich verschlungen.</p>
+          <h2 id="gameover-title" data-i18n="gameover_title">DEIN LICHT IST ERLOSCHEN</h2>
+          <p id="gameover-subtitle" data-i18n="gameover_sub_death">Die Dunkelheit hat dich verschlungen.</p>
           <div id="gameover-record" class="gameover-record hidden"></div>
         </div>
 
         <div class="run-stats-grid">
           <div class="stat-card">
-            <span class="stat-title">ÜBERLEBTE ZEIT</span>
+            <span class="stat-title" data-i18n="gameover_stat_time">ÜBERLEBTE ZEIT</span>
             <span id="stat-time" class="stat-big">0:00</span>
           </div>
           <div class="stat-card">
-            <span class="stat-title">SCORE</span>
+            <span class="stat-title" data-i18n="gameover_stat_score">SCORE</span>
             <span id="stat-score" class="stat-big">0</span>
           </div>
           <div class="stat-card">
-            <span class="stat-title">BESIEGTE FEINDE</span>
+            <span class="stat-title" data-i18n="gameover_stat_kills">BESIEGTE FEINDE</span>
             <span id="stat-kills" class="stat-big">0</span>
           </div>
           <div class="stat-card">
-            <span class="stat-title">LEVEL</span>
+            <span class="stat-title" data-i18n="gameover_stat_level">LEVEL</span>
             <span id="stat-level" class="stat-big">1</span>
           </div>
           <div class="stat-card">
-            <span class="stat-title">BOSSE BESIEGT</span>
+            <span class="stat-title" data-i18n="gameover_stat_bosses">BOSSE BESIEGT</span>
             <span id="stat-bosses" class="stat-big">0</span>
           </div>
           <div class="stat-card highlight">
-            <span class="stat-title">VERDIENTE SPLITTER</span>
+            <span class="stat-title" data-i18n="gameover_stat_shards">VERDIENTE SPLITTER</span>
             <span id="stat-shards" class="stat-big">✨ 0</span>
           </div>
         </div>
@@ -282,15 +317,15 @@
 
         <div class="gameover-details">
           <div class="gameover-block">
-            <h3>SCHADEN NACH QUELLE</h3>
+            <h3 data-i18n="gameover_damage_title">SCHADEN NACH QUELLE</h3>
             <div id="gameover-damage" class="damage-list"></div>
           </div>
           <div class="gameover-block">
-            <h3>DEIN BUILD</h3>
+            <h3 data-i18n="gameover_build_title">DEIN BUILD</h3>
             <div id="gameover-build" class="build-chips"></div>
           </div>
           <div id="gameover-achievements-block" class="gameover-block hidden">
-            <h3>NEUE ERFOLGE</h3>
+            <h3 data-i18n="gameover_achievements_title">NEUE ERFOLGE</h3>
             <div id="gameover-achievements" class="build-chips"></div>
           </div>
         </div>
@@ -298,12 +333,12 @@
         <div class="gameover-actions">
           <button id="btn-gameover-restart" class="btn-primary">
             <span class="btn-glow"></span>
-            NOCHMAL (ENTER)
+            <span data-i18n="gameover_btn_restart">NOCHMAL (ENTER)</span>
           </button>
-          <button id="btn-gameover-forge" class="btn-secondary">
+          <button id="btn-gameover-forge" class="btn-secondary" data-i18n="gameover_btn_forge">
             ⚒️ ZUR SCHMIEDE
           </button>
-          <button id="btn-gameover-menu" class="btn-ghost">
+          <button id="btn-gameover-menu" class="btn-ghost" data-i18n="gameover_btn_menu">
             HAUPTMENÜ
           </button>
         </div>
@@ -313,66 +348,66 @@
     <!-- GUIDE MODAL -->
     <div id="guide-modal" class="modal-overlay hidden">
       <div class="guide-container">
-        <h2>STEUERUNG & REGELN</h2>
+        <h2 data-i18n="guide_title">STEUERUNG & REGELN</h2>
         <div class="guide-content">
           <div class="guide-section">
-            <h3>🎮 Steuerung</h3>
-            <p><strong>Bewegen:</strong> WASD, ZQSD oder Pfeiltasten • Maus gedrückt halten • Touch: irgendwo ziehen (virtueller Joystick).</p>
-            <p><strong>Angriff:</strong> Automatisch! Deine Waffen erfassen Feinde im Lichtkegel selbstständig.</p>
-            <p><strong>Dash:</strong> Leertaste, Shift, E oder Rechtsklick (Touch: DASH-Knopf) – kurzer Sprint mit <em>Unverwundbarkeit</em>, der nahe Geschosse auslöscht.</p>
-            <p><strong>⚡ Supernova (R / F):</strong> Wird durch <strong>Kills geladen</strong> (Elites zählen 5-fach, Boss-Kills laden sie komplett). Opfert 50% deines Lichts, verwüstet den Bildschirm und macht dich kurz unverwundbar – während dieser Zeit verlierst du kein Licht.</p>
-            <p><strong>Pause:</strong> ESC / P oder ⏸. <strong>Gaben:</strong> Tasten 1–3 wählen, R neu würfeln, S überspringen.</p>
+            <h3 data-i18n="guide_controls_heading">🎮 Steuerung</h3>
+            <p><strong>Bewegen:</strong> <span data-i18n="guide_controls_move">WASD, ZQSD oder Pfeiltasten • Maus gedrückt halten • Touch: irgendwo ziehen (virtueller Joystick).</span></p>
+            <p><strong>Angriff:</strong> <span data-i18n="guide_controls_attack">Automatisch! Deine Waffen erfassen Feinde im Lichtkegel selbstständig.</span></p>
+            <p><strong>Dash:</strong> <span data-i18n="guide_controls_dash">Leertaste, Shift, E oder Rechtsklick (Touch: DASH-Knopf) – kurzer Sprint mit <em>Unverwundbarkeit</em>, der nahe Geschosse auslöscht.</span></p>
+            <p><strong>⚡ Supernova (R / F):</strong> <span data-i18n="guide_controls_nova">Wird durch <strong>Kills geladen</strong> (Elites zählen 5-fach, Boss-Kills laden sie komplett). Opfert 50% deines Lichts, verwüstet den Bildschirm und macht dich kurz unverwundbar – während dieser Zeit verlierst du kein Licht.</span></p>
+            <p><strong>Pause:</strong> <span data-i18n="guide_controls_pause">ESC / P oder ⏸. <strong>Gaben:</strong> Tasten 1–3 wählen, R neu würfeln, S überspringen.</span></p>
           </div>
           <div class="guide-section">
-            <h3>💡 Das Gesetz des Lichts</h3>
-            <p>Dein Licht ist gleichzeitig <strong>Leben</strong>, <strong>Sichtweite</strong> und <strong>Waffenreichweite</strong>. Es verringert sich jede Sekunde!</p>
-            <p>Besiege Feinde, um Lichtfunken und Splitter zu erbeuten. Je heller du bist, desto weiter reichen deine Waffen und desto mehr Schaden teilst du aus – aber umso mehr Feinde werden angelockt!</p>
+            <h3 data-i18n="guide_law_heading">💡 Das Gesetz des Lichts</h3>
+            <p data-i18n="guide_law_p1">Dein Licht ist gleichzeitig <strong>Leben</strong>, <strong>Sichtweite</strong> und <strong>Waffenreichweite</strong>. Es verringert sich jede Sekunde!</p>
+            <p data-i18n="guide_law_p2">Besiege Feinde, um Lichtfunken und Splitter zu erbeuten. Je heller du bist, desto weiter reichen deine Waffen und desto mehr Schaden teilst du aus – aber umso mehr Feinde werden angelockt!</p>
           </div>
           <div class="guide-section">
-            <h3>⚔️ Waffen & Bosse</h3>
-            <p>8 Waffen mit Evolutionen (max. 4 gleichzeitig) und über 20 Upgrades.</p>
-            <p><strong>Endlos:</strong> Nach jeweils ca. 2:30 Minuten ohne Boss erscheint der nächste Boss – jeder hat <strong>2,5× so viel Leben</strong> wie der vorherige und neue Fähigkeiten. Bosse lassen viele große Drops fallen.</p>
-            <p>Die Gegner werden mit der Zeit stärker, zahlreicher und gefährlicher. Es gibt kein Ende – nur deinen Rekord.</p>
+            <h3 data-i18n="guide_weapons_heading">⚔️ Waffen & Bosse</h3>
+            <p data-i18n="guide_weapons_p1">8 Waffen mit Evolutionen (max. 4 gleichzeitig) und über 20 Upgrades.</p>
+            <p data-i18n="guide_weapons_p2"><strong>Endlos:</strong> Nach jeweils ca. 2:30 Minuten ohne Boss erscheint der nächste Boss – jeder hat <strong>2,5× so viel Leben</strong> wie der vorherige und neue Fähigkeiten. Bosse lassen viele große Drops fallen.</p>
+            <p data-i18n="guide_weapons_p3">Die Gegner werden mit der Zeit stärker, zahlreicher und gefährlicher. Es gibt kein Ende – nur deinen Rekord.</p>
           </div>
           <div class="guide-section">
-            <h3>💎 Drops</h3>
-            <p><strong>Blaue Kristalle</strong> geben Licht, <strong>goldene Splitter</strong> sind deine Währung für die Schmiede. Große Varianten sind mehr wert und werden aus größerer Entfernung angezogen.</p>
-            <p><strong>Tipp:</strong> Die Schmiede-Upgrades „Morgenschild“, „Vorbereitung“ und „Startgabe“ machen die ersten Minuten deutlich leichter.</p>
+            <h3 data-i18n="guide_drops_heading">💎 Drops</h3>
+            <p data-i18n="guide_drops_p1"><strong>Blaue Kristalle</strong> geben Licht, <strong>goldene Splitter</strong> sind deine Währung für die Schmiede. Große Varianten sind mehr wert und werden aus größerer Entfernung angezogen.</p>
+            <p data-i18n="guide_drops_tip"><strong>Tipp:</strong> Die Schmiede-Upgrades „Morgenschild“, „Vorbereitung“ und „Startgabe“ machen die ersten Minuten deutlich leichter.</p>
           </div>
         </div>
-        <button id="btn-close-guide" class="btn-primary">VERSTANDEN</button>
+        <button id="btn-close-guide" class="btn-primary" data-i18n="guide_btn_close">VERSTANDEN</button>
       </div>
     </div>
 
     <!-- ACHIEVEMENTS & LEADERBOARD -->
     <div id="achievements-modal" class="modal-overlay hidden">
       <div class="achievements-container">
-        <h2>🏆 ERFOLGE & BESTENLISTE</h2>
+        <h2 data-i18n="achievements_title">🏆 ERFOLGE & BESTENLISTE</h2>
         <div class="achievements-columns">
           <div class="achievements-side">
-            <h3>Beste Läufe</h3>
+            <h3 data-i18n="achievements_col_best">Beste Läufe</h3>
             <ol id="leaderboard-list" class="leaderboard-list"></ol>
-            <h3>Gesamt</h3>
+            <h3 data-i18n="achievements_col_lifetime">Gesamt</h3>
             <p id="lifetime-stats" class="lifetime-stats"></p>
           </div>
           <div class="achievements-main">
-            <h3>Erfolge</h3>
+            <h3 data-i18n="achievements_col_list">Erfolge</h3>
             <div id="achievements-list" class="achievements-list"></div>
           </div>
         </div>
-        <button id="btn-close-achievements" class="btn-primary">ZURÜCK</button>
+        <button id="btn-close-achievements" class="btn-primary" data-i18n="achievements_btn_back">ZURÜCK</button>
       </div>
     </div>
 
     <!-- PAUSE MENU -->
     <div id="pause-modal" class="modal-overlay hidden">
       <div class="pause-container">
-        <h2>PAUSE</h2>
+        <h2 data-i18n="pause_title">PAUSE</h2>
         <div id="pause-build" class="pause-build"></div>
         <div class="pause-actions">
-          <button id="btn-pause-resume" class="btn-primary">WEITER</button>
-          <button id="btn-pause-settings" class="btn-secondary">⚙️ EINSTELLUNGEN</button>
-          <button id="btn-pause-quit" class="btn-ghost">AUFGEBEN</button>
+          <button id="btn-pause-resume" class="btn-primary" data-i18n="pause_btn_resume">WEITER</button>
+          <button id="btn-pause-settings" class="btn-secondary" data-i18n="pause_btn_settings">⚙️ EINSTELLUNGEN</button>
+          <button id="btn-pause-quit" class="btn-ghost" data-i18n="pause_btn_quit">AUFGEBEN</button>
         </div>
       </div>
     </div>
@@ -380,46 +415,61 @@
     <!-- SETTINGS -->
     <div id="settings-modal" class="modal-overlay hidden">
       <div class="settings-container">
-        <h2>EINSTELLUNGEN</h2>
+        <h2 data-i18n="settings_title">EINSTELLUNGEN</h2>
         <div class="settings-grid">
-          <h3>Audio</h3>
-          <label class="setting-row"><span>Musik</span><input id="set-music" type="range" min="0" max="100" step="5" /></label>
-          <label class="setting-row"><span>Effekte</span><input id="set-sfx" type="range" min="0" max="100" step="5" /></label>
-          <label class="setting-row"><span>Stumm</span><input id="set-muted" type="checkbox" /></label>
+          <h3 data-i18n="settings_sec_general">Allgemein</h3>
+          <label class="setting-row"><span data-i18n="settings_lang">Sprache</span>
+            <select id="set-language">
+              <option value="de">Deutsch</option>
+              <option value="en">English</option>
+            </select>
+          </label>
+          <label class="setting-row"><span data-i18n="settings_difficulty">Schwierigkeitsgrad</span>
+            <select id="set-difficulty">
+              <option value="easy">🌅 Dämmerung / Dawn</option>
+              <option value="normal">🌑 Eklipse / Eclipse</option>
+              <option value="hard">💀 Abgrund / Abyss</option>
+            </select>
+          </label>
 
-          <h3>Grafik</h3>
-          <label class="setting-row"><span>Qualität</span>
+          <h3 data-i18n="settings_sec_audio">Audio</h3>
+          <label class="setting-row"><span data-i18n="settings_music">Musik</span><input id="set-music" type="range" min="0" max="100" step="5" /></label>
+          <label class="setting-row"><span data-i18n="settings_sfx">Effekte</span><input id="set-sfx" type="range" min="0" max="100" step="5" /></label>
+          <label class="setting-row"><span data-i18n="settings_muted">Stumm</span><input id="set-muted" type="checkbox" /></label>
+
+          <h3 data-i18n="settings_sec_graphics">Grafik</h3>
+          <label class="setting-row"><span data-i18n="settings_quality">Qualität</span>
             <select id="set-quality">
-              <option value="auto">Auto (empfohlen)</option>
-              <option value="high">Hoch</option>
-              <option value="medium">Mittel</option>
-              <option value="low">Niedrig (Akku)</option>
+              <option value="auto" data-i18n="settings_quality_auto">Auto (empfohlen)</option>
+              <option value="high" data-i18n="settings_quality_high">Hoch</option>
+              <option value="medium" data-i18n="settings_quality_medium">Mittel</option>
+              <option value="low" data-i18n="settings_quality_low">Niedrig (Akku)</option>
             </select>
           </label>
-          <label class="setting-row"><span>Bildrate</span>
+          <label class="setting-row"><span data-i18n="settings_fpscap">Bildrate</span>
             <select id="set-fpscap">
-              <option value="60">60 FPS (empfohlen)</option>
-              <option value="30">30 FPS (Akku)</option>
-              <option value="0">Unbegrenzt</option>
+              <option value="60" data-i18n="settings_fpscap_60">60 FPS (empfohlen)</option>
+              <option value="30" data-i18n="settings_fpscap_30">30 FPS (Akku)</option>
+              <option value="0" data-i18n="settings_fpscap_0">Unbegrenzt</option>
             </select>
           </label>
-          <label class="setting-row"><span>Bildschirmwackeln</span><input id="set-shake" type="checkbox" /></label>
-          <label class="setting-row"><span>Schadenszahlen</span><input id="set-dmgnums" type="checkbox" /></label>
-          <label class="setting-row"><span>FPS anzeigen</span><input id="set-fps" type="checkbox" /></label>
+          <label class="setting-row"><span data-i18n="settings_shake">Bildschirmwackeln</span><input id="set-shake" type="checkbox" /></label>
+          <label class="setting-row"><span data-i18n="settings_dmgnums">Schadenszahlen</span><input id="set-dmgnums" type="checkbox" /></label>
+          <label class="setting-row"><span data-i18n="settings_fps">FPS anzeigen</span><input id="set-fps" type="checkbox" /></label>
 
-          <h3>Steuerung</h3>
-          <label class="setting-row"><span>Joystick</span>
+          <h3 data-i18n="settings_sec_controls">Steuerung</h3>
+          <label class="setting-row"><span data-i18n="settings_joystick">Joystick</span>
             <select id="set-joystick">
-              <option value="floating">Schwebend</option>
-              <option value="fixed">Fest (unten)</option>
+              <option value="floating" data-i18n="settings_joystick_floating">Schwebend</option>
+              <option value="fixed" data-i18n="settings_joystick_fixed">Fest (unten)</option>
             </select>
           </label>
-          <label class="setting-row"><span>Linkshänder (Knöpfe links)</span><input id="set-lefthanded" type="checkbox" /></label>
-          <label class="setting-row"><span>Vibration</span><input id="set-haptics" type="checkbox" /></label>
-          <button id="btn-reset-tutorial" class="btn-ghost btn-small">Tipps erneut anzeigen</button>
-          <button id="btn-run-benchmark" class="btn-ghost btn-small">⏱️ Leistungstest starten (30 s)</button>
+          <label class="setting-row"><span data-i18n="settings_lefthanded">Linkshänder (Knöpfe links)</span><input id="set-lefthanded" type="checkbox" /></label>
+          <label class="setting-row"><span data-i18n="settings_haptics">Vibration</span><input id="set-haptics" type="checkbox" /></label>
+          <button id="btn-reset-tutorial" class="btn-ghost btn-small" data-i18n="settings_btn_reset_tutorial">Tipps erneut anzeigen</button>
+          <button id="btn-run-benchmark" class="btn-ghost btn-small" data-i18n="settings_btn_benchmark">⏱️ Leistungstest starten (30 s)</button>
         </div>
-        <button id="btn-close-settings" class="btn-primary">FERTIG</button>
+        <button id="btn-close-settings" class="btn-primary" data-i18n="settings_btn_done">FERTIG</button>
       </div>
     </div>
 

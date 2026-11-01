@@ -2,15 +2,7 @@ import { Player } from '../entities/Player';
 import { Weapon } from '../weapons/Weapon';
 import { GiftCardOption, generateGiftChoices, applyGiftChoice } from '../upgrades/UpgradePool';
 import { sound } from '../engine/Sound';
-
-const TAG_LABELS: Record<string, string> = {
-  'NEW WEAPON': 'NEUE WAFFE',
-  WEAPON: 'WAFFE',
-  UPGRADE: 'UPGRADE',
-  EVOLUTION: 'EVOLUTION',
-  'ECLIPSE PACT': 'ECLIPSE-PAKT',
-  'CLASS MASTERY': 'KLASSE'
-};
+import { t } from '../meta/i18n';
 
 export class GiftModal {
   private modalEl: HTMLElement | null;
@@ -85,8 +77,19 @@ export class GiftModal {
     this.inputLockedUntil = performance.now() + 350;
 
     if (this.levelLabelEl) {
-      this.levelLabelEl.textContent = label;
+      const match = label.match(/LEVEL (\d+)/i);
+      if (match) {
+        this.levelLabelEl.textContent = t('gift_level_label', match[1]);
+      } else if (label === 'STARTGABE' || label === 'STARTER BLESSING') {
+        this.levelLabelEl.textContent = t('gift_start_label');
+      } else {
+        this.levelLabelEl.textContent = label;
+      }
     }
+
+    const titleEl = this.modalEl?.querySelector('.gift-title');
+    if (titleEl) titleEl.textContent = t('gift_title');
+    if (this.skipBtn) this.skipBtn.textContent = t('gift_skip_btn');
 
     this.rerollsLeft = 1 + rerollBonus;
     this.updateRerollButton();
@@ -122,26 +125,45 @@ export class GiftModal {
 
       // Level tag e.g. "LV 0 -> 1" or "LV 1 -> 2"
       const levelText = choice.isEvolution
-        ? 'EVOLUTION'
+        ? t('tag_evolution')
         : `LV ${choice.currentLevel} → ${choice.nextLevel}`;
 
       const levelBadgeHtml = choice.tag === 'NEW WEAPON'
         ? ''
         : `<span class="card-level-badge">${levelText}</span>`;
 
+      // Localize title and description
+      const rawId = choice.id.replace('new_weapon_', '').replace('weapon_', '').replace('_evo', '').replace('passive_', '');
+      const localizedTitle = choice.type === 'weapon'
+        ? t(`weapon_${rawId}_${choice.isEvolution ? 'evo' : 'name'}`)
+        : t(`passive_${rawId}_name`);
+      const title = localizedTitle !== `weapon_${rawId}_${choice.isEvolution ? 'evo' : 'name'}` && localizedTitle !== `passive_${rawId}_name`
+        ? localizedTitle
+        : choice.title;
+
+      const localizedDesc = choice.type === 'weapon'
+        ? t(`weapon_${rawId}_${choice.isEvolution ? 'evo_desc' : 'desc'}`)
+        : t(`passive_${rawId}_desc`);
+      const desc = localizedDesc !== `weapon_${rawId}_${choice.isEvolution ? 'evo_desc' : 'desc'}` && localizedDesc !== `passive_${rawId}_desc`
+        ? localizedDesc
+        : choice.description;
+
+      const tagKey = `tag_${choice.tag.toLowerCase().replace(/ /g, '_')}`;
+      const localizedTag = t(tagKey);
+      const tagText = localizedTag !== tagKey ? localizedTag : choice.tag;
+
       card.innerHTML = `
         ${levelBadgeHtml}
         <div class="card-icon-box">
           ${choice.icon}
         </div>
-        <h3 class="card-title">${choice.title}</h3>
-        <p class="card-description">${choice.description}</p>
-        <div class="card-tag-pill ${choice.themeColor}">${TAG_LABELS[choice.tag] ?? choice.tag}</div>
+        <h3 class="card-title">${title}</h3>
+        <p class="card-description">${desc}</p>
+        <div class="card-tag-pill ${choice.themeColor}">${tagText}</div>
         <span class="card-key-hint">${i + 1}</span>
       `;
 
       card.addEventListener('click', () => this.pick(choice));
-
       this.cardsContainerEl.appendChild(card);
     }
   }
@@ -160,6 +182,8 @@ export class GiftModal {
     }
     if (this.rerollBtn) {
       this.rerollBtn.disabled = this.rerollsLeft <= 0;
+      this.rerollBtn.innerHTML = `REROLL (<span id="gift-reroll-count">${this.rerollsLeft}</span>)`;
+      this.rerollCountEl = document.getElementById('gift-reroll-count');
     }
   }
 

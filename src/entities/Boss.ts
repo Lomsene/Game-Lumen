@@ -142,7 +142,9 @@ export class Boss {
   /** Time between ability casts - faster with each phase and each boss. */
   private getAttackInterval(): number {
     const base = Math.max(1.0, 2.5 - this.bossNumber * 0.08);
-    return base * Math.pow(0.82, this.phase - 1);
+    const diff = Balance.getDifficulty();
+    const diffMult = diff === 'easy' ? 1.25 : diff === 'hard' ? 0.78 : 1.0;
+    return base * Math.pow(0.82, this.phase - 1) * diffMult;
   }
 
   public update(
@@ -214,7 +216,10 @@ export class Boss {
     this.attackTimer = 0;
 
     // From phase 2 on, bosses sometimes chain two abilities back to back
-    const casts = this.phase >= 3 && Math.random() < 0.35 ? 2 : 1;
+    const isHard = Balance.getDifficulty() === 'hard';
+    const casts = isHard
+      ? (this.phase >= 2 && Math.random() < 0.55 ? 2 : 1)
+      : (this.phase >= 3 && Math.random() < 0.35 ? 2 : 1);
     for (let c = 0; c < casts; c++) {
       const ability = this.abilities[this.abilityIndex % this.abilities.length];
       this.abilityIndex += 1;

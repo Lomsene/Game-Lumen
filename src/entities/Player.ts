@@ -191,7 +191,7 @@ export class Player {
 
   public getTotalMultiplier(): number {
     const comboBonus = Math.min(3.0, Math.floor(this.comboCount / 5) * 0.2);
-    return this.scoreMultiplier + comboBonus;
+    return (this.scoreMultiplier + comboBonus) * Balance.scoreMultiplier();
   }
 
   public getMagnetRadius(): number {

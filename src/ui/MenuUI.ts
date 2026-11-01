@@ -2,6 +2,7 @@ import { Player } from '../entities/Player';
 import { Weapon } from '../weapons/Weapon';
 import { PASSIVE_UPGRADES } from '../upgrades/UpgradePool';
 import { settings, SettingsData, QualityLevel, JoystickMode, FpsCap, haptic } from '../meta/Settings';
+import { t, getLanguage, onLanguageChange, Language, Difficulty } from '../meta/i18n';
 
 interface MenuCallbacks {
   onResume: () => void;
@@ -10,7 +11,7 @@ interface MenuCallbacks {
 }
 
 /**
- * Pause menu, settings dialog and in-game toast hints.
+ * Pause menu, settings dialog, language switcher, difficulty selector, and in-game toast hints.
  */
 export class MenuUI {
   private pauseEl: HTMLElement | null;
@@ -34,22 +35,109 @@ export class MenuUI {
       // Two-tap confirmation so a run is never lost by accident
       if (btn && btn.dataset.confirm !== '1') {
         btn.dataset.confirm = '1';
-        btn.textContent = 'WIRKLICH AUFGEBEN?';
+        btn.textContent = t('pause_btn_quit_confirm');
         window.setTimeout(() => {
           btn.dataset.confirm = '';
-          btn.textContent = 'AUFGEBEN';
+          btn.textContent = t('pause_btn_quit');
         }, 2500);
         return;
       }
       if (btn) {
         btn.dataset.confirm = '';
-        btn.textContent = 'AUFGEBEN';
+        btn.textContent = t('pause_btn_quit');
       }
       cb.onQuit();
     });
     document.getElementById('btn-close-settings')?.addEventListener('click', () => this.hideSettings());
 
+    // Main Menu Quick Language Toggle
+    document.getElementById('btn-lang-toggle')?.addEventListener('click', () => {
+      const nextLang: Language = getLanguage() === 'de' ? 'en' : 'de';
+      settings.set('language', nextLang);
+      haptic(30);
+    });
+
+    // Main Menu Difficulty Selector
+    const diffButtons = document.querySelectorAll<HTMLButtonElement>('.diff-btn');
+    diffButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const diff = btn.dataset.diff as Difficulty;
+        if (diff) {
+          settings.set('difficulty', diff);
+          haptic(25);
+        }
+      });
+    });
+
     this.bindSettings();
+    this.syncDifficultyUI();
+
+    settings.onChange((s) => {
+      this.syncDifficultyUI();
+      this.syncSettingsUI();
+    });
+
+    onLanguageChange(() => {
+      this.updateTranslations();
+      this.syncDifficultyUI();
+      if (this.pauseEl && !this.pauseEl.classList.contains('hidden')) {
+        this.renderBuild();
+      }
+    });
+
+    // Initial translation pass
+    this.updateTranslations();
+  }
+
+  // --- Translation Engine --------------------------------------------------
+
+  public updateTranslations() {
+    const lang = getLanguage();
+    document.documentElement.lang = lang;
+
+    // Update quick toggle button text
+    const langCodeEl = document.getElementById('btn-lang-code');
+    if (langCodeEl) langCodeEl.textContent = lang.toUpperCase();
+
+    // Elements with data-i18n
+    const translatable = document.querySelectorAll<HTMLElement>('[data-i18n]');
+    translatable.forEach((el) => {
+      const key = el.dataset.i18n;
+      if (key) el.textContent = t(key);
+    });
+
+    // Tooltips with data-i18n-title
+    const titled = document.querySelectorAll<HTMLElement>('[data-i18n-title]');
+    titled.forEach((el) => {
+      const key = el.dataset.i18nTitle;
+      if (key) el.title = t(key);
+    });
+
+    this.syncDifficultyUI();
+  }
+
+  public syncDifficultyUI() {
+    const curDiff = settings.data.difficulty ?? 'normal';
+
+    // Difficulty buttons in main menu
+    const diffButtons = document.querySelectorAll<HTMLButtonElement>('.diff-btn');
+    diffButtons.forEach((btn) => {
+      const diff = btn.dataset.diff;
+      btn.classList.toggle('active', diff === curDiff);
+    });
+
+    // Description box
+    const descBox = document.getElementById('diff-description-box');
+    if (descBox) {
+      descBox.textContent = t(`diff_${curDiff}_desc`);
+    }
+
+    // HUD difficulty badge
+    const badge = document.getElementById('hud-diff-badge');
+    if (badge) {
+      badge.textContent = t(`diff_${curDiff}_title`);
+      badge.className = `hud-diff-badge diff-${curDiff}`;
+    }
   }
 
   // --- Pause ---------------------------------------------------------------
@@ -73,18 +161,18 @@ export class MenuUI {
       .map((w) => `<li><span>${w.getDisplayName()}</span><b>${w.isEvolved ? 'EVO' : `LV ${w.level}`}</b></li>`)
       .join('');
     const passiveRows = Array.from(player.passives.entries())
-      .map(([id, lvl]) => `<li><span>${PASSIVE_UPGRADES[id]?.name ?? id}</span><b>LV ${lvl}</b></li>`)
+      .map(([id, lvl]) => `<li><span>${t(`passive_${id}_name`)}</span><b>LV ${lvl}</b></li>`)
       .join('');
     this.buildEl.innerHTML = `
       <div class="pause-stats">
-        <div><span>ZEIT</span><b>${m}:${s < 10 ? '0' : ''}${s}</b></div>
-        <div><span>LEVEL</span><b>${player.level}</b></div>
-        <div><span>KILLS</span><b>${player.kills}</b></div>
-        <div><span>LICHT</span><b>${Math.ceil(player.light)}/${player.maxLight}</b></div>
+        <div><span>${t('pause_stat_time')}</span><b>${m}:${s < 10 ? '0' : ''}${s}</b></div>
+        <div><span>${t('pause_stat_level')}</span><b>${player.level}</b></div>
+        <div><span>${t('pause_stat_kills')}</span><b>${player.kills}</b></div>
+        <div><span>${t('pause_stat_light')}</span><b>${Math.ceil(player.light)}/${player.maxLight}</b></div>
       </div>
       <div class="pause-lists">
-        <div><h4>WAFFEN</h4><ul>${weaponRows || '<li class="empty">Keine</li>'}</ul></div>
-        <div><h4>UPGRADES</h4><ul>${passiveRows || '<li class="empty">Noch keine</li>'}</ul></div>
+        <div><h4>${t('pause_weapons_title')}</h4><ul>${weaponRows || `<li class="empty">${t('pause_none')}</li>`}</ul></div>
+        <div><h4>${t('pause_upgrades_title')}</h4><ul>${passiveRows || `<li class="empty">${t('pause_none_upgrades')}</li>`}</ul></div>
       </div>`;
   }
 
@@ -101,7 +189,7 @@ export class MenuUI {
 
   /** Closes the top-most dismissible overlay (Android back button). Returns true if one was closed. */
   public closeTopOverlay(): boolean {
-    const candidates = ['settings-modal', 'guide-modal', 'forge-modal'];
+    const candidates = ['settings-modal', 'guide-modal', 'forge-modal', 'achievements-modal'];
     for (const id of candidates) {
       const el = document.getElementById(id);
       if (el && !el.classList.contains('hidden')) {
@@ -114,6 +202,12 @@ export class MenuUI {
   }
 
   private bindSettings() {
+    const langSelect = document.getElementById('set-language') as HTMLSelectElement | null;
+    langSelect?.addEventListener('change', () => settings.set('language', langSelect.value as Language));
+
+    const diffSelect = document.getElementById('set-difficulty') as HTMLSelectElement | null;
+    diffSelect?.addEventListener('change', () => settings.set('difficulty', diffSelect.value as Difficulty));
+
     const bindRange = (id: string, key: 'musicVolume' | 'sfxVolume') => {
       const el = document.getElementById(id) as HTMLInputElement | null;
       el?.addEventListener('input', () => settings.set(key, Number(el.value) / 100));
@@ -144,7 +238,7 @@ export class MenuUI {
 
     document.getElementById('btn-reset-tutorial')?.addEventListener('click', () => {
       settings.set('tutorialSeen', false);
-      this.showToast('Die Tipps werden im nächsten Durchlauf erneut angezeigt.');
+      this.showToast(t('toast_tutorial_reset'));
     });
   }
 
@@ -158,6 +252,8 @@ export class MenuUI {
       const el = document.getElementById(id) as HTMLInputElement | null;
       if (el) el.checked = v;
     };
+    setVal('set-language', d.language);
+    setVal('set-difficulty', d.difficulty);
     setVal('set-music', `${Math.round(d.musicVolume * 100)}`);
     setVal('set-sfx', `${Math.round(d.sfxVolume * 100)}`);
     setVal('set-quality', d.quality);

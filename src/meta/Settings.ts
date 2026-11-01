@@ -1,7 +1,8 @@
 import { storage } from '../engine/Storage';
+import { Language, Difficulty, setLanguage } from './i18n';
 
 /**
- * Persistent player settings (audio, graphics quality, controls, accessibility).
+ * Persistent player settings (audio, graphics quality, controls, accessibility, language, difficulty).
  */
 export type QualityLevel = 'auto' | 'high' | 'medium' | 'low';
 export type JoystickMode = 'floating' | 'fixed';
@@ -9,6 +10,8 @@ export type JoystickMode = 'floating' | 'fixed';
 export type FpsCap = 0 | 30 | 60;
 
 export interface SettingsData {
+  language: Language;
+  difficulty: Difficulty;
   musicVolume: number; // 0..1
   sfxVolume: number; // 0..1
   muted: boolean;
@@ -28,6 +31,8 @@ export interface SettingsData {
 const IS_TOUCH_DEVICE = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches;
 
 const DEFAULTS: SettingsData = {
+  language: 'de',
+  difficulty: 'normal',
   musicVolume: 0.6,
   sfxVolume: 0.8,
   muted: false,
@@ -59,10 +64,14 @@ class SettingsManager {
     } catch {
       this.data = { ...DEFAULTS };
     }
+    setLanguage(this.data.language);
   }
 
   public set<K extends keyof SettingsData>(key: K, value: SettingsData[K]) {
     this.data[key] = value;
+    if (key === 'language') {
+      setLanguage(value as Language);
+    }
     this.save();
     for (const l of this.listeners) l(this.data);
   }

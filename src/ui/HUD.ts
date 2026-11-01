@@ -2,6 +2,8 @@ import { Player } from '../entities/Player';
 import { Boss } from '../entities/Boss';
 import { Weapon } from '../weapons/Weapon';
 import { SVG_ICONS } from '../upgrades/UpgradePool';
+import { t } from '../meta/i18n';
+import { settings } from '../meta/Settings';
 
 export class HUD {
   // Light bar elements
@@ -93,6 +95,12 @@ export class HUD {
 
   /** Forget cached values so a new run redraws everything. */
   public reset() {
+    const badge = document.getElementById('hud-diff-badge');
+    if (badge) {
+      const diff = settings.data.difficulty ?? 'normal';
+      badge.textContent = t(`diff_${diff}_title`);
+      badge.className = `hud-diff-badge diff-${diff}`;
+    }
     this.lastWeaponsKey = '';
     this.lastLightText = '';
     this.lastLightLow = null;
@@ -219,8 +227,8 @@ export class HUD {
     }
 
     if (this.killsText) {
-      const streakStr = player.comboCount >= 5 ? ` • 🔥${player.comboCount}` : '';
-      const killsStr = `${player.kills} Kills${streakStr}`;
+      const streakStr = player.comboCount >= 5 ? t('hud_streak', player.comboCount) : '';
+      const killsStr = `${t('hud_kills', player.kills)}${streakStr}`;
       if (killsStr !== this.lastKillsStr) {
         this.lastKillsStr = killsStr;
         this.killsText.textContent = killsStr;
@@ -285,7 +293,7 @@ export class HUD {
         this.lastBossName = name;
         this.bossNameText.textContent = name;
       }
-      const phaseStr = `PHASE ${boss.phase} / ${boss.maxPhases}`;
+      const phaseStr = `${t('hud_boss_phase', boss.phase)} / ${boss.maxPhases}`;
       if (this.bossPhaseText && phaseStr !== this.lastBossPhaseText) {
         this.lastBossPhaseText = phaseStr;
         this.bossPhaseText.textContent = phaseStr;

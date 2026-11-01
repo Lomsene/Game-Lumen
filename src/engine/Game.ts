@@ -19,6 +19,7 @@ import { settings, haptic } from '../meta/Settings';
 import { sound } from './Sound';
 import { runStats, SOURCE_LABELS } from '../meta/RunStats';
 import { achievements, AchievementDef, ACHIEVEMENTS } from '../meta/Achievements';
+import { t, onLanguageChange } from '../meta/i18n';
 import { PASSIVE_UPGRADES } from '../upgrades/UpgradePool';
 import { AchievementsModal } from '../ui/AchievementsModal';
 import {
@@ -146,6 +147,17 @@ export class Game {
     sound.applySettings();
 
     this.initEventListeners();
+    onLanguageChange(() => {
+      this.updateMenuStats();
+      if (this.state === 'gameover') {
+        const isRecord = !this.benchRun && this.survivalTime > forge.bestSurvivalTime;
+        const set = (id: string, text: string) => {
+          const el = document.getElementById(id);
+          if (el) el.textContent = text;
+        };
+        set('gameover-subtitle', isRecord ? t('gameover_sub_record') : t('gameover_sub_death'));
+      }
+    });
     this.updateMenuStats();
 
     window.addEventListener('resize', () => {
@@ -250,8 +262,10 @@ export class Game {
     if (achCountEl) achCountEl.textContent = `${achievements.unlocked.size}/${ACHIEVEMENTS.length}`;
     const cDef = PLAYER_CLASSES[forge.selectedClass] ?? PLAYER_CLASSES.wanderer;
     const sDef = PLAYER_SKINS[forge.selectedSkin] ?? PLAYER_SKINS.cyan;
-    if (classEl) classEl.textContent = `${cDef.icon} ${cDef.name}`;
-    if (skinEl) skinEl.textContent = sDef.name;
+    const localizedClassName = t(`class_${forge.selectedClass}_name`);
+    const localizedSkinName = t(`skin_${forge.selectedSkin}_name`);
+    if (classEl) classEl.textContent = `${cDef.icon} ${localizedClassName !== `class_${forge.selectedClass}_name` ? localizedClassName : cDef.name}`;
+    if (skinEl) skinEl.textContent = localizedSkinName !== `skin_${forge.selectedSkin}_name` ? localizedSkinName : sDef.name;
     if (orbEl) {
       if (sDef.ringStyle === 'prismatic') {
         orbEl.style.background = 'conic-gradient(#00f3ff, #a855f7, #ec4899, #fbbf24, #34d399, #00f3ff)';
@@ -903,7 +917,7 @@ export class Game {
       if (ob.charge >= ob.maxCharge) {
         this.particles.emitShockwave(ob.x, ob.y, 420, '#fbbf24', 8);
         this.particles.emitExplosion(ob.x, ob.y, '#a855f7', 35);
-        this.particles.emitBannerText(player.x, player.y, 'OBELISK OVERDRIVE! +35 LICHT', '#fbbf24');
+        this.particles.emitBannerText(player.x, player.y, t('banner_obelisk_overdrive'), '#fbbf24');
         this.renderer.triggerScreenShake(14, 0.4);
         this.renderer.flash('#fbbf24', 0.45);
         sound.playLevelUp();
@@ -1039,7 +1053,7 @@ export class Game {
       this.bossFreeTimer += dt;
       const remaining = Balance.bossInterval(this.nextBossNumber) - this.bossFreeTimer;
       if (remaining <= 10 && remaining + dt > 10) {
-        this.particles.emitBannerText(this.player.x, this.player.y - 40, `⚠ BOSS ${this.nextBossNumber} NAHT ⚠`, '#f43f5e');
+        this.particles.emitBannerText(this.player.x, this.player.y - 40, t('banner_boss_incoming', this.nextBossNumber), '#f43f5e');
       }
       if (remaining <= 0) {
         this.spawnBoss(this.nextBossNumber);
@@ -1055,11 +1069,12 @@ export class Game {
       const dist = 360 + Math.random() * 240;
       const pos = clampToArena(this.player.x + Math.cos(angle) * dist, this.player.y + Math.sin(angle) * dist, 140);
       this.obelisks.push({ x: pos.x, y: pos.y, radius: 95, charge: 0, maxCharge: 4.5, animTimer: 0, spawnGuardTimer: 0 });
-      this.particles.emitBannerText(this.player.x, this.player.y, 'VOID OBELISK ERSCHIENEN!', '#c084fc');
+      this.particles.emitBannerText(this.player.x, this.player.y, t('banner_obelisk_spawn'), '#c084fc');
     }
 
-    // Swarm encirclement every 48s (not during boss fights)
-    if (this.swarmEventTimer >= 48 && !bossActive && this.enemies.length < this.getMaxEnemies() - 10) {
+    // Swarm encirclement (36s on Hard, 48s on Normal/Easy)
+    const swarmInterval = Balance.getDifficulty() === 'hard' ? 36 : 48;
+    if (this.swarmEventTimer >= swarmInterval && !bossActive && this.enemies.length < this.getMaxEnemies() - 10) {
       this.swarmEventTimer = 0;
       this.spawnSwarmRing();
     }
@@ -1102,10 +1117,11 @@ export class Game {
   private spawnSwarmRing() {
     const minutes = this.survivalTime / 60;
     const hpScaling = Balance.enemyHpScale(minutes) * 0.75;
-    const count = Math.min(16, 8 + Math.floor(minutes * 1.2));
+    const hardBonus = Balance.getDifficulty() === 'hard' ? 4 : 0;
+    const count = Math.min(22, 8 + hardBonus + Math.floor(minutes * 1.2));
     const ringRadius = 460;
 
-    this.particles.emitBannerText(this.player.x, this.player.y, '⚠ SCHWARM-UMZINGELUNG ⚠', '#f43f5e');
+    this.particles.emitBannerText(this.player.x, this.player.y, t('banner_swarm_ring'), '#f43f5e');
     sound.playBossAlarm();
 
     for (let i = 0; i < count; i++) {
@@ -1129,7 +1145,7 @@ export class Game {
     this.particles.emitShockwave(px, py, 950, '#fbbf24', 12, 0.6);
     this.particles.emitShockwave(px, py, 650, '#00f3ff', 8, 0.5);
     this.particles.emitExplosion(px, py, '#fbbf24', 50);
-    this.particles.emitBannerText(px, py - 24, '⚡ SUPERNOVA! ⚡', '#fbbf24');
+    this.particles.emitBannerText(px, py - 24, t('banner_supernova'), '#fbbf24');
     this.renderer.triggerScreenShake(24, 0.75);
     this.renderer.flash('#fde68a', 1);
     runStats.source = 'supernova';
@@ -1253,7 +1269,7 @@ export class Game {
     runStats.bossesDefeated += 1;
     this.player.score += 2500 * boss.bossNumber * this.player.scoreMultiplier;
     this.player.addNovaCharge(this.player.getNovaChargeNeeded()); // Boss kill fully charges the nova
-    this.particles.emitBannerText(this.player.x, this.player.y - 50, `${boss.name} BESIEGT!`, '#fbbf24');
+    this.particles.emitBannerText(this.player.x, this.player.y - 50, t('banner_boss_defeated', boss.name), '#fbbf24');
     this.renderer.triggerScreenShake(20, 0.8);
     this.renderer.flash('#ffffff', 0.8);
     haptic([100, 50, 100, 50, 150]);
@@ -1264,11 +1280,11 @@ export class Game {
   private updateTutorial() {
     if (this.tutorialStep < 0) return;
     const hints: Array<{ at: number; text: string }> = [
-      { at: 1, text: this.input.isTouchDevice ? 'Ziehe irgendwo auf dem Bildschirm, um dich zu bewegen' : 'Bewege dich mit WASD oder den Pfeiltasten' },
-      { at: 6, text: 'Deine Waffen feuern automatisch – dein Licht ist Leben UND Reichweite' },
-      { at: 12, text: 'Sammle die blauen Kristalle, sonst erlischt dein Licht' },
-      { at: 20, text: this.input.isTouchDevice ? 'DASH macht kurz unverwundbar' : 'Leertaste/Shift: Dash mit kurzer Unverwundbarkeit' },
-      { at: 30, text: 'Kills laden die SUPERNOVA – zünde sie, wenn es eng wird' }
+      { at: 1, text: this.input.isTouchDevice ? t('toast_tutorial_1_touch') : t('toast_tutorial_1_kb') },
+      { at: 6, text: t('toast_tutorial_2') },
+      { at: 12, text: t('toast_tutorial_3') },
+      { at: 20, text: this.input.isTouchDevice ? t('toast_tutorial_4_touch') : t('toast_tutorial_4_kb') },
+      { at: 30, text: t('toast_tutorial_5') }
     ];
     const hint = hints[this.tutorialStep];
     if (!hint) {
@@ -1307,7 +1323,7 @@ export class Game {
     set('stat-shards', `✨ ${this.player.shardsCollectedThisRun}`);
     set('stat-level', `${this.player.level}`);
     set('stat-bosses', `${this.bossesDefeated}`);
-    set('gameover-subtitle', isRecord ? 'Neuer Rekord! Die Dunkelheit hat dich trotzdem verschlungen.' : 'Die Dunkelheit hat dich verschlungen.');
+    set('gameover-subtitle', isRecord ? t('gameover_sub_record') : t('gameover_sub_death'));
 
     this.gameoverOverlay?.classList.remove('hidden');
   }
@@ -1316,7 +1332,7 @@ export class Game {
   private renderRunDetails(rank: number) {
     const rankEl = document.getElementById('gameover-record');
     if (rankEl) {
-      const label = rank > 0 && forge.topRuns.length > 1 ? `🏆 PLATZ ${rank} DER BESTENLISTE` : '';
+      const label = rank > 0 && forge.topRuns.length > 1 ? t('gameover_rank_label', rank) : '';
       rankEl.textContent = label;
       rankEl.classList.toggle('hidden', !label);
     }
@@ -1324,12 +1340,12 @@ export class Game {
     const miniEl = document.getElementById('gameover-mini-stats');
     if (miniEl) {
       miniEl.innerHTML = [
-        `Max. Serie <b>${runStats.maxCombo}</b>`,
-        `Elite <b>${runStats.elitesDefeated}</b>`,
-        `Obelisken <b>${runStats.obelisksCaptured}</b>`,
-        `Supernovas <b>${runStats.supernovas}</b>`,
-        `Dashes <b>${runStats.dashes}</b>`,
-        `Treffer erlitten <b>${runStats.hitsTaken}</b>`
+        `${t('gameover_mini_combo')} <b>${runStats.maxCombo}</b>`,
+        `${t('gameover_mini_elites')} <b>${runStats.elitesDefeated}</b>`,
+        `${t('gameover_mini_obelisks')} <b>${runStats.obelisksCaptured}</b>`,
+        `${t('gameover_mini_novas')} <b>${runStats.supernovas}</b>`,
+        `${t('gameover_mini_dashes')} <b>${runStats.dashes}</b>`,
+        `${t('gameover_mini_hits')} <b>${runStats.hitsTaken}</b>`
       ]
         .map((item) => `<span>${item}</span>`)
         .join('');
@@ -1338,7 +1354,13 @@ export class Game {
     const damageEl = document.getElementById('gameover-damage');
     if (damageEl) {
       const names = new Map<string, string>(this.weapons.map((w) => [w.id, w.getDisplayName()]));
-      const labelFor = (id: string) => names.get(id) ?? SOURCE_LABELS[id] ?? id.toUpperCase();
+      const labelFor = (id: string) => {
+        const weaponName = t(`weapon_${id}_name`);
+        if (weaponName !== `weapon_${id}_name`) return weaponName;
+        const sourceLabel = t(`source_${id}`);
+        if (sourceLabel !== `source_${id}`) return sourceLabel;
+        return names.get(id) ?? SOURCE_LABELS[id] ?? id.toUpperCase();
+      };
       const rows = [...runStats.damageBySource.entries()].filter(([, v]) => v >= 1).sort((a, b) => b[1] - a[1]).slice(0, 6);
       const max = rows[0]?.[1] ?? 1;
       damageEl.innerHTML = rows.length
@@ -1351,7 +1373,7 @@ export class Game {
               </div>`
             )
             .join('')
-        : '<div class="damage-row"><span>Kein Schaden verursacht</span></div>';
+        : `<div class="damage-row"><span>${t('gameover_no_damage')}</span></div>`;
     }
 
     const buildEl = document.getElementById('gameover-build');

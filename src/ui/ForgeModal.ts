@@ -7,6 +7,7 @@ import {
   PlayerSkinId
 } from '../meta/Forge';
 import { sound } from '../engine/Sound';
+import { t } from '../meta/i18n';
 
 type ForgeTab = 'upgrades' | 'classes' | 'skins';
 
@@ -99,15 +100,20 @@ export class ForgeModal {
       pipsHtml += `<div class="forge-pip ${p < curLvl ? 'active' : ''}"></div>`;
     }
 
+    const nameKey = `forge_up_${id}_name`;
+    const descKey = `forge_up_${id}_desc`;
+    const name = t(nameKey) !== nameKey ? t(nameKey) : def.name;
+    const desc = t(descKey) !== descKey ? t(descKey, curLvl + 1) : def.description;
+
     itemCard.innerHTML = `
       <div class="forge-item-top">
-        <span class="forge-item-name">${def.icon} ${def.name}</span>
+        <span class="forge-item-name">${def.icon} ${name}</span>
         <span class="forge-item-level">LV ${curLvl} / ${def.maxLevel}</span>
       </div>
-      <p class="forge-item-desc">${def.description}</p>
+      <p class="forge-item-desc">${desc}</p>
       <div class="forge-pips-row">${pipsHtml}</div>
       <button class="forge-buy-btn" ${!canAfford || isMax ? 'disabled' : ''}>
-        ${isMax ? 'MAX' : `✨ ${cost} Splitter`}
+        ${isMax ? t('forge_btn_max') : t('forge_cost', cost)}
       </button>
     `;
 
@@ -147,29 +153,44 @@ export class ForgeModal {
       const card = document.createElement('div');
       card.className = `forge-item ${selected ? 'forge-item-selected' : ''}`;
 
+      const name = t(`class_${classId}_name`);
+      const sub = t(`class_${classId}_sub`);
+      const desc = t(`class_${classId}_desc`);
+
+      const masteryNameKey = `forge_up_${cDef.masteryUpgradeId}_name`;
+      const masteryDescKey = `forge_up_${cDef.masteryUpgradeId}_desc`;
+      const masteryName = t(masteryNameKey) !== masteryNameKey ? t(masteryNameKey) : (masteryDef?.name ?? 'Mastery');
+      const masteryDesc = t(masteryDescKey) !== masteryDescKey ? t(masteryDescKey) : (masteryDef?.description ?? '');
+
+      const selectLabel = selected
+        ? `✓ ${t('forge_btn_active')}`
+        : unlocked
+        ? t('forge_btn_select')
+        : `${t('forge_btn_unlock')} (✨ ${cDef.unlockCost})`;
+
       card.innerHTML = `
         <div class="forge-item-top">
-          <span class="forge-item-name">${cDef.icon} ${cDef.name}</span>
-          <span class="forge-item-level">${selected ? '✓ AKTIV' : unlocked ? 'FREIGESCHALTET' : `🔒 ${cDef.unlockCost} ✨`}</span>
+          <span class="forge-item-name">${cDef.icon} ${name}</span>
+          <span class="forge-item-level">${selected ? `✓ ${t('forge_btn_active')}` : unlocked ? t('forge_btn_select') : `🔒 ${cDef.unlockCost} ✨`}</span>
         </div>
-        <div style="font-size:11px; color:#38bdf8; font-family:var(--font-mono); letter-spacing:1px;">${cDef.subtitle}</div>
-        <p class="forge-item-desc">${cDef.description}</p>
+        <div style="font-size:11px; color:#38bdf8; font-family:var(--font-mono); letter-spacing:1px;">${sub}</div>
+        <p class="forge-item-desc">${desc}</p>
         <div class="forge-class-mastery-box">
           <div class="forge-item-top">
-            <span style="font-size:12px; font-weight:700; color:#fbbf24;">${masteryDef?.name ?? 'Meisterschaft'}</span>
+            <span style="font-size:12px; font-weight:700; color:#fbbf24;">${masteryName}</span>
             <span class="forge-item-level">LV ${mLvl} / ${mMax}</span>
           </div>
-          <p class="forge-item-desc" style="font-size:11px;">${masteryDef?.description ?? ''}</p>
+          <p class="forge-item-desc" style="font-size:11px;">${masteryDesc}</p>
           <div class="forge-pips-row">${pipsHtml}</div>
         </div>
         <div style="display:flex; justify-content:space-between; gap:8px; margin-top:6px;">
           <button class="forge-buy-btn btn-select-class" ${!unlocked && !canAfford ? 'disabled' : ''}>
-            ${selected ? '✓ AUSGEWÄHLT' : unlocked ? 'AUSWÄHLEN' : `FREISCHALTEN (✨ ${cDef.unlockCost})`}
+            ${selectLabel}
           </button>
           ${
             unlocked && masteryDef
               ? `<button class="forge-buy-btn btn-upgrade-mastery" ${!canBuyMastery || mLvl >= mMax ? 'disabled' : ''}>
-                  ${mLvl >= mMax ? 'MAX' : `UPGRADE (✨ ${mCost})`}
+                  ${mLvl >= mMax ? t('forge_btn_max') : `${t('forge_btn_buy')} (✨ ${mCost})`}
                 </button>`
               : ''
           }
@@ -217,17 +238,26 @@ export class ForgeModal {
           ? 'background: conic-gradient(#00f3ff, #a855f7, #ec4899, #fbbf24, #34d399, #00f3ff); box-shadow: 0 0 18px #ec4899;'
           : `background: radial-gradient(circle, ${sDef.coreColor} 0%, ${sDef.primaryColor} 65%, transparent 100%); box-shadow: 0 0 18px ${sDef.primaryColor}; border: 2px solid ${sDef.secondaryColor};`;
 
+      const name = t(`skin_${skinId}_name`);
+      const desc = t(`skin_${skinId}_desc`);
+
+      const skinLabel = selected
+        ? `✓ ${t('forge_btn_active')}`
+        : unlocked
+        ? t('forge_btn_select')
+        : `${t('forge_btn_unlock')} (✨ ${sDef.cost})`;
+
       card.innerHTML = `
         <div class="forge-item-top">
           <div style="display:flex; align-items:center; gap:10px;">
             <span class="skin-orb-preview" style="${previewStyle}"></span>
-            <span class="forge-item-name">${sDef.name}</span>
+            <span class="forge-item-name">${name}</span>
           </div>
-          <span class="forge-item-level">${selected ? '✓ AUSGERÜSTET' : unlocked ? 'BESITZ' : `🔒 ${sDef.cost} ✨`}</span>
+          <span class="forge-item-level">${selected ? `✓ ${t('forge_btn_active')}` : unlocked ? t('forge_btn_select') : `🔒 ${sDef.cost} ✨`}</span>
         </div>
-        <p class="forge-item-desc">${sDef.description}</p>
+        <p class="forge-item-desc">${desc}</p>
         <button class="forge-buy-btn" ${!unlocked && !canAfford ? 'disabled' : ''}>
-          ${selected ? '✓ AKTIVER SKIN' : unlocked ? 'AUSRÜSTEN' : `FREISCHALTEN (✨ ${sDef.cost})`}
+          ${skinLabel}
         </button>
       `;
 

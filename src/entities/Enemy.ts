@@ -3,6 +3,7 @@ import { ParticleSystem } from '../engine/Particle';
 import { Drop } from './Drop';
 import { sound } from '../engine/Sound';
 import { runStats } from '../meta/RunStats';
+import { Balance } from '../engine/Balance';
 
 export type EnemyType =
   | 'mote'
@@ -353,6 +354,7 @@ export class Enemy {
     lightRadius: number = player.getLightRadius()
   ): void {
     this.timer += dt;
+    const isHard = Balance.getDifficulty() === 'hard';
     this.floatZ = Math.sin(this.timer * 4.5 + this.x * 0.05) * 2.8;
     if (this.hitFlashTimer > 0) this.hitFlashTimer -= dt;
 
@@ -428,14 +430,16 @@ export class Enemy {
           this.rotation = Math.atan2(dy, dx);
 
           this.attackCooldown += dt;
-          if (this.attackCooldown >= 3.2 && dist < 340) {
-            this.chargeWindupTimer = 0.45;
+          const chargerCd = isHard ? 2.3 : 3.2;
+          if (this.attackCooldown >= chargerCd && dist < 340) {
+            this.chargeWindupTimer = isHard ? 0.32 : 0.45;
             this.chargeDir = { x: dx / dist, y: dy / dist };
             this.rotation = Math.atan2(dy, dx);
           }
         } else {
           this.vx = this.chargeDir.x * (this.speed * 2.8);
           this.vy = this.chargeDir.y * (this.speed * 2.8);
+          if (isHard && Math.random() < 0.35) particles.emitSpark(this.x, this.y, '#f97316', 3);
           this.attackCooldown += dt;
           if (this.attackCooldown > 0.8) {
             this.isCharging = false;
@@ -448,25 +452,30 @@ export class Enemy {
         this.handleKiting(dx, dy, dist, 180, 270);
         this.rotation = Math.atan2(dy, dx);
         this.attackCooldown += dt;
-        if (this.attackCooldown >= 2.0 && dist < 400) {
+        const spitterCd = isHard ? 1.5 : 2.0;
+        if (this.attackCooldown >= spitterCd && dist < 400) {
           this.attackCooldown = 0;
-          const pSpeed = 195 * projectileSpeedBonus;
-          // Predictive lead aiming based on player's velocity!
+          const pSpeed = 195 * projectileSpeedBonus * (isHard ? 1.15 : 1.0);
           const leadTime = Math.min(0.85, dist / pSpeed) * 0.65;
           const aimX = player.x + player.vx * leadTime - this.x;
           const aimY = player.y + player.vy * leadTime - this.y;
           const aimLen = Math.hypot(aimX, aimY) || 1;
-          projectiles.push({
-            x: this.x,
-            y: this.y,
-            vx: (aimX / aimLen) * pSpeed,
-            vy: (aimY / aimLen) * pSpeed,
-            radius: this.isElite ? 7 : 5.5,
-            damage: this.damage,
-            color: '#a855f7',
-            life: 0,
-            maxLife: 4.2
-          });
+          const baseAngle = Math.atan2(aimY, aimX);
+          const spitterShots = isHard ? [-0.09, 0.09] : [0];
+          for (const sa of spitterShots) {
+            const a = baseAngle + sa;
+            projectiles.push({
+              x: this.x,
+              y: this.y,
+              vx: Math.cos(a) * pSpeed,
+              vy: Math.sin(a) * pSpeed,
+              radius: this.isElite ? 7 : 5.5,
+              damage: this.damage,
+              color: '#a855f7',
+              life: 0,
+              maxLife: 4.2
+            });
+          }
           particles.emitSpark(this.x, this.y, '#a855f7', 6);
           sound.playShoot(400, 0.08);
         }
@@ -476,11 +485,14 @@ export class Enemy {
         this.handleKiting(dx, dy, dist, 190, 280);
         this.rotation = Math.atan2(dy, dx);
         this.attackCooldown += dt;
-        if (this.attackCooldown >= 2.8 && dist < 380) {
+        const scatterCd = isHard ? 2.1 : 2.8;
+        if (this.attackCooldown >= scatterCd && dist < 380) {
           this.attackCooldown = 0;
           const baseAngle = Math.atan2(dy, dx);
-          const pSpeed = 160 * projectileSpeedBonus;
-          const spreadAngles = this.isElite ? [-0.4, -0.2, 0, 0.2, 0.4] : [-0.25, 0, 0.25];
+          const pSpeed = 160 * projectileSpeedBonus * (isHard ? 1.15 : 1.0);
+          const spreadAngles = isHard
+            ? (this.isElite ? [-0.45, -0.3, -0.15, 0, 0.15, 0.3, 0.45] : [-0.36, -0.18, 0, 0.18, 0.36])
+            : (this.isElite ? [-0.4, -0.2, 0, 0.2, 0.4] : [-0.25, 0, 0.25]);
 
           for (const sa of spreadAngles) {
             const a = baseAngle + sa;
@@ -505,10 +517,11 @@ export class Enemy {
         this.handleKiting(dx, dy, dist, 280, 420);
         this.rotation = Math.atan2(dy, dx);
         this.attackCooldown += dt;
+        const sniperCd = isHard ? 2.6 : 3.6;
 
-        if (!this.isAimingSniper && this.attackCooldown >= 3.6 && dist < 500) {
+        if (!this.isAimingSniper && this.attackCooldown >= sniperCd && dist < 500) {
           this.isAimingSniper = true;
-          this.sniperAimTimer = 1.1;
+          this.sniperAimTimer = isHard ? 0.72 : 1.1;
           this.sniperTargetPos = { x: player.x, y: player.y };
         }
 
@@ -548,16 +561,29 @@ export class Enemy {
         this.handleKiting(dx, dy, dist, 220, 340);
         this.rotation = Math.atan2(dy, dx);
         this.attackCooldown += dt;
-        if (this.attackCooldown >= 4.0 && dist < 420) {
+        const mortarCd = isHard ? 2.9 : 4.0;
+        if (this.attackCooldown >= mortarCd && dist < 420) {
           this.attackCooldown = 0;
+          const rad = (this.isElite ? 75 : 55) * (isHard ? 1.15 : 1.0);
           mortarZones.push({
             x: player.x,
             y: player.y,
-            radius: this.isElite ? 75 : 55,
+            radius: rad,
             damage: this.damage,
             timer: 0,
-            maxTime: 1.3
+            maxTime: isHard ? 1.1 : 1.3
           });
+          if (isHard) {
+            // Hard mode: dual cluster artillery predicted along player vector
+            mortarZones.push({
+              x: player.x + player.vx * 0.7,
+              y: player.y + player.vy * 0.7,
+              radius: rad * 0.9,
+              damage: this.damage * 0.8,
+              timer: 0,
+              maxTime: 1.2
+            });
+          }
           particles.emitSpark(this.x, this.y, '#eab308', 8);
           sound.playShoot(320, 0.2);
         }
@@ -581,6 +607,28 @@ export class Enemy {
         this.vx = (dx / dist) * this.speed;
         this.vy = (dy / dist) * this.speed;
         this.rotation = Math.atan2(dy, dx);
+        if (isHard) {
+          this.attackCooldown += dt;
+          if (this.attackCooldown >= 3.6 && dist < 420) {
+            this.attackCooldown = 0;
+            for (let a = 0; a < 8; a++) {
+              const ang = (a / 8) * Math.PI * 2;
+              projectiles.push({
+                x: this.x,
+                y: this.y,
+                vx: Math.cos(ang) * 190,
+                vy: Math.sin(ang) * 190,
+                radius: 5.5,
+                damage: this.damage * 0.7,
+                color: '#e11d48',
+                life: 0,
+                maxLife: 3.5
+              });
+            }
+            particles.emitShockwave(this.x, this.y, 60, '#e11d48', 4);
+            sound.playShoot(300, 0.15);
+          }
+        }
         break;
 
       case 'eclipseOrb':

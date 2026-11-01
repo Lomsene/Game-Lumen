@@ -3,6 +3,7 @@ import { Enemy } from '../entities/Enemy';
 import { Boss } from '../entities/Boss';
 import { ParticleSystem } from '../engine/Particle';
 import { sound } from '../engine/Sound';
+import { t } from '../meta/i18n';
 
 export interface PlayerProjectile {
   x: number;
@@ -73,6 +74,9 @@ export abstract class Weapon {
   }
 
   public getDisplayName(): string {
+    const key = `weapon_${this.id}_${this.isEvolved ? 'evo' : 'name'}`;
+    const localized = t(key);
+    if (localized !== key) return localized;
     return this.isEvolved ? this.evolvedName : this.name;
   }
 
